@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="ms" data-theme="maroon" data-mode="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RPH Autobot v2</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --radius: 14px;
+      --shadow: 0 10px 24px rgba(0,0,0,.08);
+    }
+
+    :root[data-theme="maroon"] {
+      --primary: #7f1d1d;
+      --primary-dark: #5f1616;
+      --primary-soft: rgba(127,29,29,.12);
+    }
+
+    :root[data-theme="emerald"] {
+      --primary: #047857;
+      --primary-dark: #065f46;
+      --primary-soft: rgba(4,120,87,.12);
+    }
+
+    :root[data-theme="blue"] {
+      --primary: #1d4ed8;
+      --primary-dark: #1e40af;
+      --primary-soft: rgba(29,78,216,.12);
+    }
+
+    :root[data-theme="purple"] {
+      --primary: #6d28d9;
+      --primary-dark: #5b21b6;
+      --primary-soft: rgba(109,40,217,.12);
+    }
+
+    :root[data-mode="light"] {
+      --bg: #faf6ee;
+      --card: #fffdf7;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e7dcc8;
+      --input: #ffffff;
+    }
+
+    :root[data-mode="dark"] {
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #f3f4f6;
+      --muted: #94a3b8;
+      --line: #334155;
+      --input: #0b1220;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button, input, select, textarea { font: inherit; }
+
+    .container { max-width: 1500px; margin: 0 auto; padding: 16px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+    h1 { margin: 0; font-size: 24px; }
+    h2, h3 { margin-top: 0; }
+
+    .small { font-size: 12px; color: var(--muted); }
+
+    .banner {
+      background: #fef3c7;
+      color: #78350f;
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      border: 1px solid #fde68a;
+    }
+
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
+    .tab-btn {
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .tab-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .tab { display: none; }
+    .tab.active { display: block; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+
+    input, select, textarea {
+      width: 100%;
+      background: var(--input);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 10px;
+      outline: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    button { border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-weight: 700; }
+    button.primary { background: var(--primary); color: #fff; }
+    button.primary:hover { background: var(--primary-dark); }
+    button.secondary { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    button.danger { background: transparent; color: #dc2626; border: 1px solid #dc2626; padding: 6px 8px; font-size: 12px; }
+
+    .table-wrap { overflow: auto; }
+
+    .table { width: 100%; border-collapse: collapse; min-width: 1400px; }
+    .table th, .table td { border-bottom: 1px solid var(--line); padding: 9px 8px; text-align: left; vertical-align: top; }
+    .table th { font-size: 13px; color: var(--muted); }
+
+    .sp-select { min-width: 170px; font-size: 12px; }
+    .ref-select { min-width: 200px; font-size: 12px; }
+    .refman-input { min-width: 180px; font-size: 12px; }
+    .hadir-input { width: 70px; }
+
+    .penerangan { min-width: 300px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+
+    .muted-box { padding: 14px; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
+
+    #print-area { display: none; }
+
+    @media print {
+      .app-ui { display: none !important; }
+      #print-area { display: block !important; }
+    }
+
+    @page { size: A4; margin: 10mm; }
+
+    .rph-page {
+      width: 190mm;
+      height: 277mm;
+      overflow: hidden;
+      page-break-after: always;
+      font-family: Arial, sans-serif;
+      color: #000;
+      background: #fff;
+    }
+
+    .rph-page:last-child { page-break-after: auto; }
+
+    .rph-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+
+    .rph-table td {
+      border: 1px solid #000;
+      padding: 4px 5px;
+      font-size: 8.8pt;
+      line-height: 1.25;
+      vertical-align: top;
+      word-wrap: break-word;
+      white-space: pre-line;
+    }
+
+    .rph-title { text-align: center; font-weight: bold; font-size: 12pt; padding: 7px 5px; }
+
+    .rph-label {
+      font-weight: bold;
+      background: #f3f3f3 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .rph-aktiviti { padding-bottom: 28mm; }
+  </style>
+</head>
+<body>
+  <div class="app-ui">
+    <div class="container">
+      <header class="card topbar">
+        <div>
+          <h1>RPH Autobot v2</h1>
+          <div class="small">SK Tanjong Dawai • Jana RPH A4 fixed • Bulk PDF</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <select id="themeSelect" style="width:150px;">
+            <option value="maroon">Maroon</option>
+            <option value="emerald">Hijau Emerald</option>
+            <option value="blue">Biru</option>
+            <option value="purple">Purple</option>
+          </select>
+
+          <label style="display:flex; align-items:center; gap:6px; margin:0;">
+            <input type="checkbox" id="darkMode" style="width:auto;">
+            Dark Mode
+          </label>
+
+          <span id="dbStatus" class="small"></span>
+        </div>
+      </header>
+
+      <div id="setupBanner" class="banner" hidden>
+        Supabase belum dikonfigurasi. Gantikan <b>YOUR_SUPABASE_URL</b> dan <b>YOUR_SUPABASE_ANON_KEY</b> dalam fail HTML ini.
+      </div>
+
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="tab-dskp">DSKP</button>
+        <button class="tab-btn" data-tab="tab-jadual">Jadual Waktu</button>
+        <button class="tab-btn" data-tab="tab-takwim">Takwim</button>
+      </nav>
+
+      <!-- DASHBOARD -->
+      <section id="tab-dashboard" class="tab active">
+        <div class="card">
+          <div class="grid">
+            <div>
+              <label>Tahun</label>
+              <input id="yearInput" type="number" value="2026" />
+            </div>
+
+            <div>
+              <label>Minggu dari Takwim</label>
+              <select id="weekSelect"></select>
+            </div>
+
+            <div>
+              <label>Tarikh Ahad</label>
+              <input id="weekStart" type="date" />
+            </div>
+
+            <div>
+              <label>Subjek</label>
+              <select id="filterSubject"></select>
+            </div>
+
+            <div>
+              <label>Hari</label>
+              <select id="filterHari">
+                <option value="">Semua Hari</option>
+                <option>AHAD</option>
+                <option>ISNIN</option>
+                <option>SELASA</option>
+                <option>RABU</option>
+                <option>KHAMIS</option>
+              </select>
+            </div>
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="primary" id="loadSlotsBtn">Papar Slot</button>
+              <button class="secondary" id="selectAllBtn">Pilih Semua</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <h3 style="margin:0;">Slot Minggu</h3>
+            <button class="primary" id="generateBtn">Jana PDF Bulk</button>
+          </div>
+
+          <div id="slotContainer" class="table-wrap">
+            <div class="muted-box">Pilih tarikh Ahad dan tekan "Papar Slot".</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DSKP -->
+      <section id="tab-dskp" class="tab">
+        <div class="card">
+          <h3>Tambah DSKP</h3>
+          <div class="grid">
+            <div>
+              <label>Subjek</label>
+              <select id="dskpAddSubject"></select>
+            </div>
+            <div>
+              <label>Tahun</label>
+              <input id="dskpAddTahun" type="number" value="4" />
+            </div>
+            <div>
+              <label>Kod SK</label>
+              <input id="dskpAddKodSK" placeholder="1.1" />
+            </div>
+            <div>
+              <label>Standard Kandungan</label>
+              <input id="dskpAddSK" placeholder="Kemahiran Proses Sains" />
+            </div>
+            <div>
+              <label>Kod SP</label>
+              <input id="dskpAddKodSP" placeholder="1.1.1" />
+            </div>
+            <div>
+              <label>Standard Pembelajaran</label>
+              <input id="dskpAddSP" placeholder="Memerhati..." />
+            </div>
+            <div>
+              <label>Kemahiran</label>
+              <input id="dskpAddKemahiran" placeholder="Kemahiran Sains / Motor" />
+            </div>
+            <div>
+              <label>KBAT</label>
+              <input id="dskpAddKbat" placeholder="Mengingat / Menganalisis" />
+            </div>
+            <div>
+              <label>EMK / Nilai</label>
+              <input id="dskpAddEmk" placeholder="Sains dan Teknologi" />
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button class="primary" onclick="addDskp()">Tambah DSKP</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="grid" style="margin-bottom:12px;">
+            <div>
+              <label>Filter Subjek</label>
+              <select id="dskpFilterSubject" onchange="renderDskpTable()"></select>
+            </div>
+            <div>
+              <label>Filter Tahun</label>
+              <input id="dskpFilterTahun" type="number" placeholder="Semua" onchange="renderDskpTable()" />
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <h3 style="margin:0;">Senarai DSKP</h3>
+            <span id="dskpCount" class="small"></span>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Tahun</th>
+                  <th>Subjek</th>
+                  <th>Kod SK</th>
+                  <th>Kod SP</th>
+                  <th>Standard Pembelajaran</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="dskpTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- JADUAL -->
+      <section id="tab-jadual" class="tab">
+        <div class="card">
+          <h3>Tambah Jadual Waktu</h3>
+          <div class="grid">
+            <div>
+              <label>Hari</label>
+              <select id="jadualAddHari">
+                <option>AHAD</option>
+                <option>ISNIN</option>
+                <option>SELASA</option>
+                <option>RABU</option>
+                <option>KHAMIS</option>
+              </select>
+            </div>
+            <div>
+              <label>Masa</label>
+              <input id="jadualAddMasa" placeholder="8:45 - 9:45" />
+            </div>
+            <div>
+              <label>Kelas</label>
+              <input id="jadualAddKelas" placeholder="4 KREATIF" />
+            </div>
+            <div>
+              <label>Subjek</label>
+              <select id="jadualAddSubject"></select>
+            </div>
+            <div>
+              <label>Jumlah Murid</label>
+              <input id="jadualAddMurid" type="number" placeholder="24" />
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button class="primary" onclick="addJadual()">Tambah Jadual</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Senarai Jadual Waktu</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Hari</th>
+                  <th>Masa</th>
+                  <th>Kelas</th>
+                  <th>Subjek</th>
+                  <th>Murid</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="jadualTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAKWIM -->
+      <section id="tab-takwim" class="tab">
+        <div class="card">
+          <h3>Tambah Takwim Minggu</h3>
+          <div class="grid">
+            <div>
+              <label>Tahun</label>
+              <input id="takwimAddTahun" type="number" value="2026" />
+            </div>
+            <div>
+              <label>Minggu</label>
+              <input id="takwimAddMinggu" type="number" placeholder="1" />
+            </div>
+            <div>
+              <label>Tarikh Ahad</label>
+              <input id="takwimAddTarikh" type="date" />
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button class="primary" onclick="addTakwim()">Tambah Takwim</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Senarai Takwim</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Tahun</th>
+                  <th>Minggu</th>
+                  <th>Tarikh Ahad</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="takwimTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="print-area"></div>
+
+  <script>
+    // ======================================================
+    // GANTI 2 BARIS NI SAHAJA
+    // ======================================================
+    const SUPABASE_URL = 'https://pcfxusnrqgardwpqtxqt.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZnh1c25ycWdhcmR3cHF0eHF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDE5OTAsImV4cCI6MjEwMjc';
+
+    const configured = !SUPABASE_URL.includes('YOUR_') && !SUPABASE_ANON_KEY.includes('YOUR_');
+    let db = null;
+
+    if (configured) {
+      db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+
+    const state = {
+      subjects: [],
+      jadual: [],
+      takwim: [],
+      dskp: [],
+      dskpMap: {},
+      visibleSlots: []
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const REFLEKSI_OPTIONS = [
+      'PdP ditangguhkan kerana Mesyuarat / Kursus / Sukan.',
+      'PdP ditangguhkan kerana Program Sekolah.',
+      'PdP ditangguhkan kerana Cuti Peristiwa / Cuti Umum.',
+      'Aktiviti PdP dibawa ke sesi akan datang kerana murid tidak menguasai.',
+      'Guru tidak hadir atas urusan Cuti Sakit.'
+    ];
+
+    // ======================================================
+    // UTIL
+    // ======================================================
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function normalizeSubject(value) {
+      return String(value || '').toUpperCase().trim().replace(/\s+/g, ' ');
+    }
+
+    function cleanText(value) {
+      return String(value || '').trim().replace(/\s+/g, ' ');
+    }
+
+    function stripEndPeriod(value) {
+      return cleanText(value).replace(/\.+$/, '');
+    }
+
+    function lowerFirstSentence(value) {
+      const text = stripEndPeriod(value);
+      if (!text) return '';
+      return text.charAt(0).toLowerCase() + text.slice(1);
+    }
+
+    function uniqueJoin(values) {
+      return [...new Set(values.map(cleanText).filter(Boolean))].join(', ');
+    }
+
+    function truncateText(value, max) {
+      const text = cleanText(value);
+      return text.length > max ? text.slice(0, max) + '…' : text;
+    }
+
+    function localISODate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function formatDisplayDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${d}/${m}/${y}`;
+    }
+
+    function getTahunFromKelas(kelas) {
+      const match = String(kelas || '').match(/^(\d)/);
+      return match ? parseInt(match[1], 10) : null;
+    }
+
+    function parseMasaForSort(masaText) {
+      const start = String(masaText || '').split('-')[0].trim();
+      const [h, m] = start.split(':').map(Number);
+      let hour = h || 0;
+      if (hour < 7) hour += 12;
+      return (hour * 60) + (m || 0);
+    }
+
+    // ======================================================
+    // THEME
+    // ======================================================
+    function initTheme() {
+      const savedTheme = localStorage.getItem('rph_theme') || 'maroon';
+      const savedDark = localStorage.getItem('rph_dark') === '1';
+
+      $('themeSelect').value = savedTheme;
+      $('darkMode').checked = savedDark;
+
+      document.documentElement.dataset.theme = savedTheme;
+      document.documentElement.dataset.mode = savedDark ? 'dark' : 'light';
+
+      $('themeSelect').addEventListener('change', () => {
+        localStorage.setItem('rph_theme', $('themeSelect').value);
+        document.documentElement.dataset.theme = $('themeSelect').value;
+      });
+
+      $('darkMode').addEventListener('change', () => {
+        localStorage.setItem('rph_dark', $('darkMode').checked ? '1' : '0');
+        document.documentElement.dataset.mode = $('darkMode').checked ? 'dark' : 'light';
+      });
+    }
+
+    // ======================================================
+    // TABS
+    // ======================================================
+    function initTabs() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+
+          btn.classList.add('active');
+          document.getElementById(btn.dataset.tab).classList.add('active');
+        });
+      });
+    }
+
+    // ======================================================
+    // LOAD DATA
+    // ======================================================
+    async function loadBase() {
+      if (!db) {
+        renderSubjectSelects();
+        renderDashboard();
+        return;
+      }
+
+      try {
+        const year = parseInt($('yearInput').value, 10) || 2026;
+
+        const [subjectsRes, jadualRes, takwimRes, dskpRes] = await Promise.all([
+          db.from('subjects').select('*').eq('active', true).order('nama'),
+          db.from('jadual_waktu').select('*').eq('active', true).eq('tahun', year),
+          db.from('takwim').select('*').eq('tahun', year).order('minggu'),
+          db.from('dskp_database').select('*').eq('active', true)
+        ]);
+
+        state.subjects = subjectsRes.data || [];
+        state.jadual = jadualRes.data || [];
+        state.takwim = takwimRes.data || [];
+        state.dskp = dskpRes.data || [];
+
+        buildDskpMap();
+        renderSubjectSelects();
+        renderTakwimOptions();
+        renderDashboard();
+        renderDskpTable();
+        renderJadualTable();
+        renderTakwimTable();
+      } catch (err) {
+        console.error(err);
+        alert('Ralat semasa load data Supabase. Semak URL / anon key / schema.');
+      }
+    }
+
+    function buildDskpMap() {
+      state.dskpMap = {};
+
+      for (const row of state.dskp) {
+        const key = `${normalizeSubject(row.subjek_text)}|${row.tahun}|${cleanText(row.kod_sp)}`;
+        state.dskpMap[key] = row;
+      }
+    }
+
+    function renderSubjectSelects() {
+      ['filterSubject', 'dskpFilterSubject'].forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        const current = el.value;
+        el.innerHTML = '<option value="">Semua Subjek</option>' +
+          state.subjects.map(s => `<option value="${escapeHtml(s.nama)}">${escapeHtml(s.nama)}</option>`).join('');
+        el.value = current;
+      });
+
+      ['dskpAddSubject', 'jadualAddSubject'].forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        const current = el.value;
+        el.innerHTML = '<option value="">-- Pilih subjek --</option>' +
+          state.subjects.map(s => `<option value="${s.id}">${escapeHtml(s.nama)}</option>`).join('');
+        el.value = current;
+      });
+    }
+
+    function renderTakwimOptions() {
+      const el = $('weekSelect');
+      const current = el.value;
+
+      el.innerHTML = '<option value="">-- Pilih minggu --</option>' +
+        state.takwim.map(t => `<option value="${t.tarikh_ahad}">Minggu ${escapeHtml(t.minggu)} - ${escapeHtml(t.tarikh_ahad)}</option>`).join('');
+
+      el.value = current;
+    }
+
+    // ======================================================
+    // DASHBOARD
+    // ======================================================
+    function getSlotDskp(slot) {
+      const tahun = getTahunFromKelas(slot.kelas);
+      const subjekNorm = normalizeSubject(slot.subjek_text);
+
+      return state.dskp
+        .filter(r => r.tahun === tahun && normalizeSubject(r.subjek_text) === subjekNorm)
+        .sort((a, b) => (a.kod_sp || '').localeCompare((b.kod_sp || ''), undefined, { numeric: true }));
+    }
+
+    function updatePenerangan(idx) {
+      const el = document.getElementById(`pen_${idx}`);
+      const item = state.visibleSlots[idx];
+      if (!el || !item) return;
+
+      const codes = [1, 2, 3, 4]
+        .map(n => cleanText(document.getElementById(`sp_${idx}_${n}`).value))
+        .filter(Boolean);
+
+      if (!codes.length) {
+        el.innerHTML = '—';
+        return;
+      }
+
+      const tahun = getTahunFromKelas(item.slot.kelas);
+      const subjekNorm = normalizeSubject(item.slot.subjek_text);
+
+      const rows = codes
+        .map(c => state.dskpMap[`${subjekNorm}|${tahun}|${c}`])
+        .filter(Boolean);
+
+      if (!rows.length) {
+        el.innerHTML = '<span style="color:#dc2626;">Kod SP tak jumpa dalam DSKP.</span>';
+        return;
+      }
+
+      let html = `<b>SK ${escapeHtml(rows[0].kod_sk)}:</b> ${escapeHtml(rows[0].standard_kandungan)}<br>`;
+      html += rows.map(r => `<b>SP ${escapeHtml(r.kod_sp)}:</b> ${escapeHtml(r.standard_pembelajaran)}`).join('<br>');
+      el.innerHTML = html;
+    }
+
+    function renderDashboard() {
+      const container = $('slotContainer');
+      const weekStart = $('weekStart').value;
+
+      if (!weekStart) {
+        container.innerHTML = '<div class="muted-box">Pilih tarikh Ahad dan tekan "Papar Slot".</div>';
+        state.visibleSlots = [];
+        return;
+      }
+
+      const base = new Date(weekStart + 'T00:00:00');
+      if (base.getDay() !== 0) base.setDate(base.getDate() - base.getDay());
+
+      const dates = [0, 1, 2, 3, 4].map(offset => {
+        const d = new Date(base);
+        d.setDate(base.getDate() + offset);
+        return d;
+      });
+
+      const dayNames = ['AHAD', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'];
+      const subjectFilter = $('filterSubject').value;
+      const hariFilter = $('filterHari').value;
+
+      state.visibleSlots = [];
+
+      let html = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Pilih</th>
+              <th>Hari / Tarikh</th>
+              <th>Masa</th>
+              <th>Kelas</th>
+              <th>Subjek</th>
+              <th>Total</th>
+              <th>Hadir</th>
+              <th>SP 1</th>
+              <th>SP 2</th>
+              <th>SP 3</th>
+              <th>SP 4</th>
+              <th>Penerangan SK / SP</th>
+              <th>Refleksi</th>
+              <th>Refleksi Manual</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      let rowCount = 0;
+
+      dates.forEach((date, i) => {
+        const hari = dayNames[i];
+        if (hariFilter && hariFilter !== hari) return;
+
+        const slots = state.jadual
+          .filter(j => j.hari === hari && (!subjectFilter || normalizeSubject(j.subjek_text) === normalizeSubject(subjectFilter)))
+          .sort((a, b) => parseMasaForSort(a.masa_text) - parseMasaForSort(b.masa_text));
+
+        slots.forEach(slot => {
+          const idx = state.visibleSlots.length;
+          state.visibleSlots.push({ slot, tarikh: date, hari });
+          rowCount++;
+
+          const optHtml = getSlotDskp(slot)
+            .map(r => `<option value="${escapeHtml(r.kod_sp)}">${escapeHtml(r.kod_sp)} — ${escapeHtml(truncateText(r.standard_pembelajaran, 70))}</option>`)
+            .join('');
+
+          const selectTpl = (n) => `<select id="sp_${idx}_${n}" data-idx="${idx}" class="sp-select"><option value="">--</option>${optHtml}</select>`;
+
+          const refOptHtml = REFLEKSI_OPTIONS.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+
+          html += `
+            <tr>
+              <td><input type="checkbox" class="slot-check" data-idx="${idx}" style="width:auto;"></td>
+              <td>${escapeHtml(hari)}<br><span class="small">${formatDisplayDate(date)}</span></td>
+              <td>${escapeHtml(slot.masa_text)}</td>
+              <td>${escapeHtml(slot.kelas)}</td>
+              <td>${escapeHtml(slot.subjek_text)}</td>
+              <td>${slot.bil_murid ?? ''}</td>
+              <td><input id="hadir_${idx}" class="hadir-input" type="number" min="0" value="${slot.bil_murid ?? 0}"></td>
+              <td>${selectTpl(1)}</td>
+              <td>${selectTpl(2)}</td>
+              <td>${selectTpl(3)}</td>
+              <td>${selectTpl(4)}</td>
+              <td class="penerangan" id="pen_${idx}">—</td>
+              <td><select id="ref_${idx}" class="ref-select"><option value="AUTO">Auto: X/Y murid mencapai objektif</option>${refOptHtml}</select></td>
+              <td><input id="refman_${idx}" class="refman-input" placeholder="Taip refleksi sendiri (optional)"></td>
+            </tr>
+          `;
+        });
+      });
+
+      html += '</tbody></table>';
+
+      if (!rowCount) {
+        container.innerHTML = '<div class="muted-box">Tiada slot jumpa untuk tarikh / filter ini.</div>';
+        state.visibleSlots = [];
+        return;
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ======================================================
+    // RPH GENERATION
+    // ======================================================
+    function generateAktiviti(skText, spTexts) {
+      const topik = lowerFirstSentence(skText);
+      const sp1 = lowerFirstSentence(spTexts[0] || '');
+      const sp2 = spTexts[1] ? lowerFirstSentence(spTexts[1]) : '';
+      const perkembangan2 = sp2 ? `${sp1} dan ${sp2}.` : `${sp1}.`;
+
+      return `Set induksi:
+1. Guru memperkenalkan topik ${topik} dengan menggunakan teknik soal jawab/ bahan bantu mengajar.
+
+Perkembangan:
+1. Secara bimbingan guru, murid merumuskan konsep asas berkaitan ${sp1}.
+2. Murid dibahagikan kepada kumpulan untuk menjalankan aktiviti penerokaan/ simulasi tentang ${perkembangan2}
+3. Murid berbincang untuk menghasilkan dan merekodkan hasil dapatan dalam pelbagai bentuk kreatif.
+4. Kumpulan murid membentangkan dapatan mereka dan bersoal jawab dengan rakan sekelas.
+
+Penutup:
+1. Murid membuat kesimpulan tajuk pembelajaran pada hari ini dengan bimbingan guru.`;
+    }
+
+    function buildRphPage(rph) {
+      const subjek = cleanText(rph.subjek_text);
+      const skDisplay = `${cleanText(rph.kod_sk)} ${cleanText(rph.standard_kandungan)}`;
+
+      return `
+        <div class="rph-page">
+          <table class="rph-table">
+            <colgroup>
+              <col style="width:32mm">
+              <col style="width:36mm">
+              <col style="width:24mm">
+              <col style="width:36mm">
+              <col style="width:22mm">
+              <col style="width:40mm">
+            </colgroup>
+
+            <tr>
+              <td colspan="6" class="rph-title">RANCANGAN PENGAJARAN HARIAN</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">MATA PELAJARAN</td>
+              <td>${escapeHtml(subjek)}</td>
+              <td class="rph-label">TARIKH</td>
+              <td>${formatDisplayDate(rph.tarikh_date)}</td>
+              <td class="rph-label">HARI</td>
+              <td>${escapeHtml(rph.hari)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">KELAS</td>
+              <td>${escapeHtml(rph.kelas)}</td>
+              <td class="rph-label">MASA</td>
+              <td>${escapeHtml(rph.masa_text)}</td>
+              <td class="rph-label">BIL. MURID</td>
+              <td>${rph.hadir}/${rph.total} orang</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">S. KANDUNGAN</td>
+              <td colspan="5">${escapeHtml(skDisplay)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">S. PEMBELAJARAN</td>
+              <td colspan="5">${escapeHtml(rph.spDisplay)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">OBJEKTIF PDP</td>
+              <td colspan="5">${escapeHtml(rph.objektif)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">AKTIVITI</td>
+              <td colspan="5" class="rph-aktiviti">${escapeHtml(rph.aktiviti)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">KEMAHIRAN SAINS</td>
+              <td colspan="5">${escapeHtml(rph.kemahiran)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">KBAT</td>
+              <td colspan="5">${escapeHtml(rph.kbat)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">EMK/ NILAI</td>
+              <td colspan="5">${escapeHtml(rph.emk)}</td>
+            </tr>
+
+            <tr>
+              <td class="rph-label">REFLEKSI</td>
+              <td colspan="5">${escapeHtml(rph.refleksi)}</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }
+
+    async function generateBulkPdf() {
+      const checked = [...document.querySelectorAll('.slot-check:checked')];
+
+      if (!checked.length) {
+        alert('Pilih slot yang nak dijana dahulu.');
+        return;
+      }
+
+      const rphs = [];
+      const missing = [];
+
+      for (const checkbox of checked) {
+        const idx = checkbox.dataset.idx;
+        const item = state.visibleSlots[idx];
+        const slot = item.slot;
+
+        const codes = [1, 2, 3, 4]
+          .map(n => cleanText(document.getElementById(`sp_${idx}_${n}`).value))
+          .filter(Boolean);
+
+        if (!codes.length) {
+          missing.push(`${slot.kelas} ${slot.masa_text}: Tiada kod SP dipilih`);
+          continue;
+        }
+
+        const tahun = getTahunFromKelas(slot.kelas);
+        const subjekNorm = normalizeSubject(slot.subjek_text);
+        const dskpRows = [];
+
+        for (const code of codes) {
+          const row = state.dskpMap[`${subjekNorm}|${tahun}|${code}`];
+
+          if (!row) {
+            missing.push(`${slot.subjek_text} ${slot.kelas}: Kod SP ${code} tidak jumpa`);
+          } else {
+            dskpRows.push(row);
+          }
+        }
+
+        if (dskpRows.length !== codes.length) continue;
+
+        const firstRow = dskpRows[0];
+        const spTexts = dskpRows.map(r => cleanText(r.standard_pembelajaran));
+
+        const spDisplay = dskpRows
+          .map(r => `${cleanText(r.kod_sp)} ${cleanText(r.standard_pembelajaran)}`)
+          .join('\n');
+
+        const objektif = 'Pada akhir PdP, murid dapat mencapai: ' + spTexts.join('\n');
+        const aktiviti = generateAktiviti(cleanText(firstRow.standard_kandungan), spTexts);
+
+        const kemahiran = uniqueJoin(dskpRows.map(r => r.kemahiran));
+        const kbat = uniqueJoin(dskpRows.map(r => r.kbat));
+        const emk = uniqueJoin(dskpRows.map(r => r.emk_nilai));
+
+        const hadir = parseInt(document.getElementById(`hadir_${idx}`).value, 10) || 0;
+        const total = slot.bil_murid || 0;
+
+        const refSelect = cleanText(document.getElementById(`ref_${idx}`).value);
+        const refManual = cleanText(document.getElementById(`refman_${idx}`).value);
+        const refleksi = refManual || (refSelect === 'AUTO'
+          ? `${hadir}/${total} murid dapat mencapai objektif yang ditetapkan.`
+          : refSelect);
+
+        rphs.push({
+          ...slot,
+          tarikh_date: item.tarikh,
+          hari: item.hari,
+          kod_sk: firstRow.kod_sk,
+          standard_kandungan: firstRow.standard_kandungan,
+          spCodes: codes,
+          spDisplay,
+          objektif,
+          aktiviti,
+          kemahiran,
+          kbat,
+          emk,
+          hadir,
+          total,
+          refleksi
+        });
+      }
+
+      if (missing.length) {
+        alert('Ralat / data tidak lengkap:\n\n' + missing.join('\n'));
+        return;
+      }
+
+      if (!rphs.length) {
+        alert('Tiada RPH valid untuk dijana.');
+        return;
+      }
+
+      const pagesHtml = rphs.map(buildRphPage).join('');
+      $('print-area').innerHTML = pagesHtml;
+
+      saveLogs(rphs).catch(err => console.warn('Log tidak disimpan:', err));
+
+      setTimeout(() => {
+        window.print();
+      }, 100);
+    }
+
+    async function saveLogs(rphs) {
+      if (!db) return;
+
+      const rows = rphs.map(rph => ({
+        tarikh_pdp: localISODate(rph.tarikh_date),
+        hari: rph.hari,
+        kelas: rph.kelas,
+        masa: rph.masa_text,
+        subject_id: rph.subject_id || null,
+        subjek_text: rph.subjek_text,
+        kod_sk: rph.kod_sk,
+        kod_sp: rph.spCodes,
+        hadir: rph.hadir,
+        total: rph.total,
+        refleksi: rph.refleksi,
+        status: 'JANA'
+      }));
+
+      await db.from('rph_log').insert(rows);
+    }
+
+    // ======================================================
+    // DSKP CRUD
+    // ======================================================
+    function renderDskpTable() {
+      const subjectFilter = $('dskpFilterSubject').value;
+      const tahunFilter = $('dskpFilterTahun').value;
+
+      let rows = [...state.dskp];
+
+      if (subjectFilter) {
+        rows = rows.filter(r => normalizeSubject(r.subjek_text) === normalizeSubject(subjectFilter));
+      }
+
+      if (tahunFilter) {
+        rows = rows.filter(r => String(r.tahun) === tahunFilter);
+      }
+
+      rows.sort((a, b) => {
+        return (a.subjek_text || '').localeCompare(b.subjek_text || '') ||
+               (a.tahun - b.tahun) ||
+               (a.kod_sp || '').localeCompare(b.kod_sp || '', undefined, { numeric: true });
+      });
+
+      $('dskpCount').textContent = `${rows.length} rekod`;
+
+      if (!rows.length) {
+        $('dskpTableBody').innerHTML = '<tr><td colspan="6"><div class="muted-box">Tiada data DSKP.</div></td></tr>';
+        return;
+      }
+
+      $('dskpTableBody').innerHTML = rows.slice(0, 300).map(row => {
+        const sp = cleanText(row.standard_pembelajaran);
+        const shortSp = sp.length > 90 ? sp.slice(0, 90) + '...' : sp;
+
+        return `
+          <tr>
+            <td>${row.tahun}</td>
+            <td>${escapeHtml(row.subjek_text)}</td>
+            <td>${escapeHtml(row.kod_sk)}</td>
+            <td>${escapeHtml(row.kod_sp)}</td>
+            <td>${escapeHtml(shortSp)}</td>
+            <td><button class="danger" onclick="deleteDskp('${row.id}')">Padam</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function addDskp() {
+      if (!db) {
+        alert('Supabase belum dikonfigurasi.');
+        return;
+      }
+
+      const subjectId = $('dskpAddSubject').value;
+      const subject = state.subjects.find(s => s.id === subjectId);
+
+      if (!subject) {
+        alert('Pilih subjek.');
+        return;
+      }
+
+      const payload = {
+        subject_id: subject.id,
+        subjek_text: subject.nama,
+        tahun: parseInt($('dskpAddTahun').value, 10) || 0,
+        kod_sk: cleanText($('dskpAddKodSK').value),
+        standard_kandungan: cleanText($('dskpAddSK').value),
+        kod_sp: cleanText($('dskpAddKodSP').value),
+        standard_pembelajaran: cleanText($('dskpAddSP').value),
+        kemahiran: cleanText($('dskpAddKemahiran').value),
+        kbat: cleanText($('dskpAddKbat').value),
+        emk_nilai: cleanText($('dskpAddEmk').value),
+        active: true
+      };
+
+      if (!payload.tahun || !payload.kod_sk || !payload.standard_kandungan || !payload.kod_sp || !payload.standard_pembelajaran) {
+        alert('Sila lengkapkan Tahun, Kod SK, Standard Kandungan, Kod SP dan Standard Pembelajaran.');
+        return;
+      }
+
+      const { error } = await db.from('dskp_database').insert(payload);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+
+      $('dskpAddKodSK').value = '';
+      $('dskpAddSK').value = '';
+      $('dskpAddKodSP').value = '';
+      $('dskpAddSP').value = '';
+      $('dskpAddKemahiran').value = '';
+      $('dskpAddKbat').value = '';
+      $('dskpAddEmk').value = '';
+    }
+
+    async function deleteDskp(id) {
+      if (!db) return;
+      if (!confirm('Padam rekod DSKP ini?')) return;
+
+      const { error } = await db.from('dskp_database').delete().eq('id', id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+    }
+
+    // ======================================================
+    // JADUAL CRUD
+    // ======================================================
+    function renderJadualTable() {
+      const rows = [...state.jadual].sort((a, b) => {
+        const dayOrder = { AHAD: 0, ISNIN: 1, SELASA: 2, RABU: 3, KHAMIS: 4, JUMAAT: 5, SABTU: 6 };
+        return (dayOrder[a.hari] ?? 99) - (dayOrder[b.hari] ?? 99) ||
+               parseMasaForSort(a.masa_text) - parseMasaForSort(b.masa_text);
+      });
+
+      if (!rows.length) {
+        $('jadualTableBody').innerHTML = '<tr><td colspan="6"><div class="muted-box">Tiada jadual waktu.</div></td></tr>';
+        return;
+      }
+
+      $('jadualTableBody').innerHTML = rows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.hari)}</td>
+          <td>${escapeHtml(row.masa_text)}</td>
+          <td>${escapeHtml(row.kelas)}</td>
+          <td>${escapeHtml(row.subjek_text)}</td>
+          <td>${row.bil_murid ?? ''}</td>
+          <td><button class="danger" onclick="deleteJadual('${row.id}')">Padam</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function addJadual() {
+      if (!db) {
+        alert('Supabase belum dikonfigurasi.');
+        return;
+      }
+
+      const subjectId = $('jadualAddSubject').value;
+      const subject = state.subjects.find(s => s.id === subjectId);
+
+      if (!subject) {
+        alert('Pilih subjek.');
+        return;
+      }
+
+      const payload = {
+        tahun: parseInt($('yearInput').value, 10) || 2026,
+        hari: $('jadualAddHari').value,
+        masa_text: cleanText($('jadualAddMasa').value),
+        kelas: cleanText($('jadualAddKelas').value).toUpperCase(),
+        subject_id: subject.id,
+        subjek_text: subject.nama,
+        bil_murid: parseInt($('jadualAddMurid').value, 10) || 0,
+        active: true
+      };
+
+      if (!payload.hari || !payload.masa_text || !payload.kelas) {
+        alert('Sila lengkapkan hari, masa dan kelas.');
+        return;
+      }
+
+      const { error } = await db.from('jadual_waktu').insert(payload);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+
+      $('jadualAddMasa').value = '';
+      $('jadualAddKelas').value = '';
+      $('jadualAddMurid').value = '';
+    }
+
+    async function deleteJadual(id) {
+      if (!db) return;
+      if (!confirm('Padam slot jadual ini?')) return;
+
+      const { error } = await db.from('jadual_waktu').delete().eq('id', id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+    }
+
+    // ======================================================
+    // TAKWIM CRUD
+    // ======================================================
+    function renderTakwimTable() {
+      const rows = [...state.takwim].sort((a, b) => a.minggu - b.minggu);
+
+      if (!rows.length) {
+        $('takwimTableBody').innerHTML = '<tr><td colspan="4"><div class="muted-box">Tiada takwim.</div></td></tr>';
+        return;
+      }
+
+      $('takwimTableBody').innerHTML = rows.map(row => `
+        <tr>
+          <td>${row.tahun}</td>
+          <td>${row.minggu}</td>
+          <td>${row.tarikh_ahad}</td>
+          <td><button class="danger" onclick="deleteTakwim('${row.id}')">Padam</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function addTakwim() {
+      if (!db) {
+        alert('Supabase belum dikonfigurasi.');
+        return;
+      }
+
+      const payload = {
+        tahun: parseInt($('takwimAddTahun').value, 10) || 2026,
+        minggu: parseInt($('takwimAddMinggu').value, 10) || 0,
+        tarikh_ahad: $('takwimAddTarikh').value
+      };
+
+      if (!payload.minggu || !payload.tarikh_ahad) {
+        alert('Sila lengkapkan minggu dan tarikh Ahad.');
+        return;
+      }
+
+      const { error } = await db.from('takwim').insert(payload);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+
+      $('takwimAddMinggu').value = '';
+      $('takwimAddTarikh').value = '';
+    }
+
+    async function deleteTakwim(id) {
+      if (!db) return;
+      if (!confirm('Padam takwim ini?')) return;
+
+      const { error } = await db.from('takwim').delete().eq('id', id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadBase();
+    }
+
+    // ======================================================
+    // INIT
+    // ======================================================
+    (function init() {
+      initTheme();
+      initTabs();
+
+      if (!configured) {
+        $('setupBanner').hidden = false;
+        $('dbStatus').textContent = 'Supabase belum setup';
+      } else {
+        $('dbStatus').textContent = 'Supabase ready';
+      }
+
+      $('weekStart').value = localISODate(new Date());
+
+      $('loadSlotsBtn').addEventListener('click', renderDashboard);
+      $('yearInput').addEventListener('change', loadBase);
+
+      $('weekSelect').addEventListener('change', () => {
+        if ($('weekSelect').value) {
+          $('weekStart').value = $('weekSelect').value;
+        }
+        renderDashboard();
+      });
+
+      $('filterSubject').addEventListener('change', renderDashboard);
+      $('filterHari').addEventListener('change', renderDashboard);
+
+      $('selectAllBtn').addEventListener('click', () => {
+        const checkboxes = [...document.querySelectorAll('.slot-check')];
+        const anyUnchecked = checkboxes.some(cb => !cb.checked);
+        checkboxes.forEach(cb => cb.checked = anyUnchecked);
+      });
+
+      $('generateBtn').addEventListener('click', generateBulkPdf);
+
+      $('slotContainer').addEventListener('change', (e) => {
+        if (e.target && e.target.classList.contains('sp-select')) {
+          updatePenerangan(e.target.dataset.idx);
+        }
+      });
+
+      loadBase();
+    })();
+  </script>
+</body>
+</html>
