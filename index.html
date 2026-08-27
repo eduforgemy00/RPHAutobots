@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RPH Autobot v2</title>
+  <title>RPH Autobot v2 - Login</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
@@ -177,7 +177,7 @@
     .rph-page:last-child { page-break-after: auto; }
 
     .rph-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
-    
+
     .rph-table td {
       border: 1px solid #000;
       padding: 4px 5px;
@@ -198,10 +198,79 @@
     }
 
     .rph-aktiviti { padding-bottom: 28mm; }
+
+    /* LOGIN SCREEN */
+    #loginScreen {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    .login-box {
+      width: 100%;
+      max-width: 400px;
+      padding: 32px;
+    }
+
+    .login-box h2 {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .error-msg {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .user-email {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    #appContent { display: none; }
   </style>
 </head>
 <body>
-  <div class="app-ui">
+  <!-- LOGIN SCREEN -->
+  <div id="loginScreen">
+    <div class="card login-box">
+      <h2> RPH Autobot v2</h2>
+      <div class="small" style="text-align:center; margin-bottom:24px;">SK Tanjong Dawai</div>
+      
+      <div>
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="you@example.com" />
+      </div>
+
+      <div style="margin-top:12px;">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" />
+      </div>
+
+      <div id="loginError" class="error-msg"></div>
+
+      <button class="primary" onclick="handleLogin()" style="width:100%; margin-top:20px;">
+        Login
+      </button>
+
+      <div class="small" style="text-align:center; margin-top:16px;">
+        Masukkan email & password Supabase Auth
+      </div>
+    </div>
+  </div>
+
+  <!-- APP CONTENT (hidden until login) -->
+  <div id="appContent" class="app-ui">
     <div class="container">
       <header class="card topbar">
         <div>
@@ -209,6 +278,11 @@
           <div class="small">SK Tanjong Dawai • Jana RPH A4 fixed • Bulk PDF</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <div class="user-info">
+            <span id="userEmail" class="user-email"></span>
+            <button class="secondary" onclick="handleLogout()">Logout</button>
+          </div>
+
           <select id="themeSelect" style="width:150px;">
             <option value="maroon">Maroon</option>
             <option value="emerald">Hijau Emerald</option>
@@ -220,14 +294,8 @@
             <input type="checkbox" id="darkMode" style="width:auto;">
             Dark Mode
           </label>
-
-          <span id="dbStatus" class="small"></span>
         </div>
       </header>
-
-      <div id="setupBanner" class="banner" hidden>
-        Supabase belum dikonfigurasi. Gantikan <b>YOUR_SUPABASE_URL</b> dan <b>YOUR_SUPABASE_ANON_KEY</b> dalam fail HTML ini.
-      </div>
 
       <nav class="tabs">
         <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
@@ -477,17 +545,15 @@
 
   <script>
     // ======================================================
-    // GANTI 2 BARIS NI SAHAJA
+    // SUPABASE CONFIG
     // ======================================================
     const SUPABASE_URL = 'https://pcfxusnrqgardwpqtxqt.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZnh1c25ycWdhcmR3cHF0eHF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDE5OTAsImV4cCI6MjEwMjcxNzk5MH0.jp4_T1RdcZJ7UOVLZsrSo6kxvicM6eIcJE42VkyVLGY';
 
-    const configured = !SUPABASE_URL.includes('YOUR_') && !SUPABASE_ANON_KEY.includes('YOUR_');
-    let db = null;
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if (configured) {
-      db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
+    let currentUser = null;
+    let db = supabase; // Use authenticated client
 
     const state = {
       subjects: [],
@@ -507,6 +573,63 @@
       'Aktiviti PdP dibawa ke sesi akan datang kerana murid tidak menguasai.',
       'Guru tidak hadir atas urusan Cuti Sakit.'
     ];
+
+    // ======================================================
+    // AUTH FUNCTIONS
+    // ======================================================
+    async function handleLogin() {
+      const email = $('loginEmail').value.trim();
+      const password = $('loginPassword').value;
+
+      if (!email || !password) {
+        showLoginError('Sila masukkan email dan password');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) {
+          showLoginError(error.message);
+          return;
+        }
+
+        currentUser = data.user;
+        $('userEmail').textContent = currentUser.email;
+        showApp();
+      } catch (err) {
+        showLoginError('Login gagal. Cuba semula.');
+      }
+    }
+
+    async function handleLogout() {
+      await supabase.auth.signOut();
+      currentUser = null;
+      showLogin();
+    }
+
+    function showLoginError(msg) {
+      const el = $('loginError');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function showApp() {
+      $('loginScreen').style.display = 'none';
+      $('appContent').style.display = 'block';
+      initApp();
+    }
+
+    function showLogin() {
+      $('loginScreen').style.display = 'flex';
+      $('appContent').style.display = 'none';
+      $('loginEmail').value = '';
+      $('loginPassword').value = '';
+      $('loginError').style.display = 'none';
+    }
 
     // ======================================================
     // UTIL
@@ -617,12 +740,6 @@
     // LOAD DATA
     // ======================================================
     async function loadBase() {
-      if (!db) {
-        renderSubjectSelects();
-        renderDashboard();
-        return;
-      }
-
       try {
         const year = parseInt($('yearInput').value, 10) || 2026;
 
@@ -647,7 +764,7 @@
         renderTakwimTable();
       } catch (err) {
         console.error(err);
-        alert('Ralat semasa load data Supabase. Semak URL / anon key / schema.');
+        alert('Ralat semasa load data. Semak connection.');
       }
     }
 
@@ -1044,8 +1161,6 @@ Penutup:
     }
 
     async function saveLogs(rphs) {
-      if (!db) return;
-
       const rows = rphs.map(rph => ({
         tarikh_pdp: localISODate(rph.tarikh_date),
         hari: rph.hari,
@@ -1112,11 +1227,6 @@ Penutup:
     }
 
     async function addDskp() {
-      if (!db) {
-        alert('Supabase belum dikonfigurasi.');
-        return;
-      }
-
       const subjectId = $('dskpAddSubject').value;
       const subject = state.subjects.find(s => s.id === subjectId);
 
@@ -1163,7 +1273,6 @@ Penutup:
     }
 
     async function deleteDskp(id) {
-      if (!db) return;
       if (!confirm('Padam rekod DSKP ini?')) return;
 
       const { error } = await db.from('dskp_database').delete().eq('id', id);
@@ -1204,11 +1313,6 @@ Penutup:
     }
 
     async function addJadual() {
-      if (!db) {
-        alert('Supabase belum dikonfigurasi.');
-        return;
-      }
-
       const subjectId = $('jadualAddSubject').value;
       const subject = state.subjects.find(s => s.id === subjectId);
 
@@ -1248,7 +1352,6 @@ Penutup:
     }
 
     async function deleteJadual(id) {
-      if (!db) return;
       if (!confirm('Padam slot jadual ini?')) return;
 
       const { error } = await db.from('jadual_waktu').delete().eq('id', id);
@@ -1283,11 +1386,6 @@ Penutup:
     }
 
     async function addTakwim() {
-      if (!db) {
-        alert('Supabase belum dikonfigurasi.');
-        return;
-      }
-
       const payload = {
         tahun: parseInt($('takwimAddTahun').value, 10) || 2026,
         minggu: parseInt($('takwimAddMinggu').value, 10) || 0,
@@ -1313,7 +1411,6 @@ Penutup:
     }
 
     async function deleteTakwim(id) {
-      if (!db) return;
       if (!confirm('Padam takwim ini?')) return;
 
       const { error } = await db.from('takwim').delete().eq('id', id);
@@ -1329,16 +1426,9 @@ Penutup:
     // ======================================================
     // INIT
     // ======================================================
-    (function init() {
+    async function initApp() {
       initTheme();
       initTabs();
-
-      if (!configured) {
-        $('setupBanner').hidden = false;
-        $('dbStatus').textContent = 'Supabase belum setup';
-      } else {
-        $('dbStatus').textContent = 'Supabase ready';
-      }
 
       $('weekStart').value = localISODate(new Date());
 
@@ -1369,7 +1459,32 @@ Penutup:
         }
       });
 
-      loadBase();
+      await loadBase();
+    }
+
+    // Check auth state on load
+    (async function checkAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        currentUser = session.user;
+        $('userEmail').textContent = currentUser.email;
+        showApp();
+      } else {
+        showLogin();
+      }
+
+      // Listen for auth changes
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          currentUser = session.user;
+          $('userEmail').textContent = currentUser.email;
+          showApp();
+        } else if (event === 'SIGNED_OUT') {
+          currentUser = null;
+          showLogin();
+        }
+      });
     })();
   </script>
 </body>
