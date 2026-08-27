@@ -545,15 +545,14 @@
 
   <script>
     // ======================================================
-    // SUPABASE CONFIG
+    // GANTI 2 BARIS NI DENGAN URL & KEY SEBENAR KAU
     // ======================================================
     const SUPABASE_URL = 'https://pcfxusnrqgardwpqtxqt.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZnh1c25ycWdhcmR3cHF0eHF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDE5OTAsImV4cCI6MjEwMjcxNzk5MH0.jp4_T1RdcZJ7UOVLZsrSo6kxvicM6eIcJE42VkyVLGY';
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUser = null;
-    let db = supabase; // Use authenticated client
 
     const state = {
       subjects: [],
@@ -587,7 +586,7 @@
       }
 
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await db.auth.signInWithPassword({
           email,
           password
         });
@@ -606,7 +605,7 @@
     }
 
     async function handleLogout() {
-      await supabase.auth.signOut();
+      await db.auth.signOut();
       currentUser = null;
       showLogin();
     }
@@ -1464,7 +1463,7 @@ Penutup:
 
     // Check auth state on load
     (async function checkAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await db.auth.getSession();
       
       if (session) {
         currentUser = session.user;
@@ -1475,7 +1474,7 @@ Penutup:
       }
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      db.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
           currentUser = session.user;
           $('userEmail').textContent = currentUser.email;
