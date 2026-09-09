@@ -873,7 +873,9 @@
       const hariFilter = $('filterHari').value;
 
       state.visibleSlots = [];
-
+      
+      const spDatalists = {};
+      
       let html = `
         <table class="table">
           <thead>
@@ -912,11 +914,15 @@
           state.visibleSlots.push({ slot, tarikh: date, hari });
           rowCount++;
 
-          const optHtml = getSlotDskp(slot)
-            .map(r => `<option value="${escapeHtml(r.kod_sp)}">${escapeHtml(r.kod_sp)} — ${escapeHtml(truncateText(r.standard_pembelajaran, 70))}</option>`)
-            .join('');
+          const listKey = 'spList_' + normalizeSubject(slot.subjek_text).replace(/[^A-Z0-9]/gi, '') + '_' + (getTahunFromKelas(slot.kelas) || 0);
 
-          const selectTpl = (n) => `<select id="sp_${idx}_${n}" data-idx="${idx}" class="sp-select"><option value="">--</option>${optHtml}</select>`;
+          if (!spDatalists[listKey]) {
+            spDatalists[listKey] = getSlotDskp(slot)
+              .map(r => `<option value="${escapeHtml(r.kod_sp)}">${escapeHtml(r.kod_sp)} — ${escapeHtml(truncateText(r.standard_pembelajaran, 70))}</option>`)
+              .join('');
+          }
+
+          const selectTpl = (n) => `<input type="text" id="sp_${idx}_${n}" data-idx="${idx}" class="sp-select" list="${listKey}" placeholder="Cari / taip kod SP..." autocomplete="off" />`;
 
           const refOptHtml = REFLEKSI_OPTIONS.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
 
@@ -949,7 +955,12 @@
         return;
       }
 
-      container.innerHTML = html;
+      let datalistHtml = '';
+      for (const key in spDatalists) {
+        datalistHtml += `<datalist id="${key}">${spDatalists[key]}</datalist>`;
+      }
+
+      container.innerHTML = html + datalistHtml;
     }
 
     // ======================================================
