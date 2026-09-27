@@ -1115,7 +1115,11 @@ Penutup:
           .map(r => `${cleanText(r.kod_sp)} ${cleanText(r.standard_pembelajaran)}`)
           .join('\n');
 
-        const objektif = 'Pada akhir PdP, murid dapat mencapai: ' + spTexts.join('\n');
+        const objektif = spTexts.length === 1
+          ? `Pada akhir PdP, semua murid dapat ${lowerFirstSentence(spTexts[0])} dengan bimbingan guru.`
+          : `Pada akhir PdP, semua murid dapat:\n` +
+            spTexts.map((sp, i) => `${i + 1}. ${lowerFirstSentence(sp)}`).join('\n') +
+            `\ndengan bimbingan guru.`;
         const aktiviti = generateAktiviti(cleanText(firstRow.standard_kandungan), spTexts);
 
         const kemahiran = uniqueJoin(dskpRows.map(r => r.kemahiran));
