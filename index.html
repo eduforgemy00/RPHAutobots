@@ -545,12 +545,17 @@
 
   <script>
     // ======================================================
-    // GANTI 2 BARIS NI DENGAN URL & KEY SEBENAR KAU
+    // SUPABASE CONFIG
     // ======================================================
     const SUPABASE_URL = 'https://pcfxusnrqgardwpqtxqt.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZnh1c25ycWdhcmR3cHF0eHF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDE5OTAsImV4cCI6MjEwMjcxNzk5MH0.jp4_T1RdcZJ7UOVLZsrSo6kxvicM6eIcJE42VkyVLGY';
 
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const configured = !SUPABASE_URL.includes('YOUR_') && !SUPABASE_ANON_KEY.includes('YOUR_');
+    let db = null;
+
+    if (configured) {
+      db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
 
     let currentUser = null;
 
@@ -577,6 +582,11 @@
     // AUTH FUNCTIONS
     // ======================================================
     async function handleLogin() {
+      if (!db) {
+        showLoginError('Supabase belum dikonfigurasi. Letak URL & key dahulu dalam fail ini.');
+        return;
+      }
+
       const email = $('loginEmail').value.trim();
       const password = $('loginPassword').value;
 
@@ -697,6 +707,89 @@
     }
 
     // ======================================================
+    // STATE PERSISTENCE (auto-save data slot)
+    // ======================================================
+    function getStateKey() {
+      const year = $('yearInput').value || 2026;
+      const weekStart = $('weekStart').value || 'no-week';
+      return `rph_state_${year}_${weekStart}`;
+    }
+
+    function saveState() {
+      const key = getStateKey();
+      const data = {};
+
+      state.visibleSlots.forEach((item, idx) => {
+        const slotState = {
+          sp: [],
+          hadir: null,
+          ref: null,
+          refman: null,
+          checked: false
+        };
+
+        for (let i = 1; i <= 4; i++) {
+          const spEl = document.getElementById(`sp_${idx}_${i}`);
+          if (spEl) slotState.sp.push(spEl.value);
+        }
+
+        const hadirEl = document.getElementById(`hadir_${idx}`);
+        if (hadirEl) slotState.hadir = hadirEl.value;
+
+        const refEl = document.getElementById(`ref_${idx}`);
+        if (refEl) slotState.ref = refEl.value;
+
+        const refmanEl = document.getElementById(`refman_${idx}`);
+        if (refmanEl) slotState.refman = refmanEl.value;
+
+        const checkEl = document.querySelector(`.slot-check[data-idx="${idx}"]`);
+        if (checkEl) slotState.checked = checkEl.checked;
+
+        data[idx] = slotState;
+      });
+
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    function loadState() {
+      const key = getStateKey();
+      const saved = localStorage.getItem(key);
+      if (!saved) return;
+
+      try {
+        const data = JSON.parse(saved);
+
+        state.visibleSlots.forEach((item, idx) => {
+          const slotState = data[idx];
+          if (!slotState) return;
+
+          (slotState.sp || []).forEach((val, i) => {
+            const spEl = document.getElementById(`sp_${idx}_${i + 1}`);
+            if (spEl) spEl.value = val;
+          });
+
+          const hadirEl = document.getElementById(`hadir_${idx}`);
+          if (hadirEl && slotState.hadir !== null) hadirEl.value = slotState.hadir;
+
+          const refEl = document.getElementById(`ref_${idx}`);
+          if (refEl && slotState.ref) refEl.value = slotState.ref;
+
+          const refmanEl = document.getElementById(`refman_${idx}`);
+          if (refmanEl && slotState.refman) refmanEl.value = slotState.refman;
+
+          const checkEl = document.querySelector(`.slot-check[data-idx="${idx}"]`);
+          if (checkEl) checkEl.checked = slotState.checked;
+        });
+
+        state.visibleSlots.forEach((item, idx) => {
+          updatePenerangan(idx);
+        });
+      } catch (err) {
+        console.warn('Gagal load state:', err);
+      }
+    }
+
+    // ======================================================
     // THEME
     // ======================================================
     function initTheme() {
@@ -739,6 +832,8 @@
     // LOAD DATA
     // ======================================================
     async function loadBase() {
+      if (!db) return;
+
       try {
         const year = parseInt($('yearInput').value, 10) || 2026;
 
@@ -873,9 +968,8 @@
       const hariFilter = $('filterHari').value;
 
       state.visibleSlots = [];
-      
       const spDatalists = {};
-      
+
       let html = `
         <table class="table">
           <thead>
@@ -961,6 +1055,9 @@
       }
 
       container.innerHTML = html + datalistHtml;
+
+      // Load balik data yang dah disimpan
+      loadState();
     }
 
     // ======================================================
@@ -1175,6 +1272,8 @@ Penutup:
     }
 
     async function saveLogs(rphs) {
+      if (!db) return;
+
       const rows = rphs.map(rph => ({
         tarikh_pdp: localISODate(rph.tarikh_date),
         hari: rph.hari,
@@ -1463,13 +1562,24 @@ Penutup:
         const checkboxes = [...document.querySelectorAll('.slot-check')];
         const anyUnchecked = checkboxes.some(cb => !cb.checked);
         checkboxes.forEach(cb => cb.checked = anyUnchecked);
+        saveState();
       });
 
       $('generateBtn').addEventListener('click', generateBulkPdf);
 
+      // Auto-save state bila user ubah apa-apa dalam slot table
+      $('slotContainer').addEventListener('input', (e) => {
+        if (e.target.matches('.sp-select, .hadir-input, .ref-select, .refman-input')) {
+          saveState();
+          if (e.target.classList.contains('sp-select')) {
+            updatePenerangan(e.target.dataset.idx);
+          }
+        }
+      });
+
       $('slotContainer').addEventListener('change', (e) => {
-        if (e.target && e.target.classList.contains('sp-select')) {
-          updatePenerangan(e.target.dataset.idx);
+        if (e.target.matches('.slot-check, .ref-select')) {
+          saveState();
         }
       });
 
@@ -1478,6 +1588,11 @@ Penutup:
 
     // Check auth state on load
     (async function checkAuth() {
+      if (!db) {
+        showLogin();
+        return;
+      }
+
       const { data: { session } } = await db.auth.getSession();
       
       if (session) {
