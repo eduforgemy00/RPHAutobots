@@ -125,7 +125,8 @@ Penutup:
       ? `Pada akhir PdP, semua murid dapat ${lowerFirstSentence(spTexts[0])} dengan bimbingan guru.`
       : `Pada akhir PdP, semua murid dapat:\n` + spTexts.map((s, i) => `${i + 1}. ${lowerFirstSentence(s)}`).join('\n') + `\ndengan bimbingan guru.`;
 
-    const total = slot.bil_murid || 0;
+    // total: dari sistem kehadiran jika ada (lebih tepat), jika tidak dari jadual waktu
+    const total = Number.isFinite(input.total) ? input.total : (slot.bil_murid || 0);
     const hadir = Number.isFinite(input.hadir) ? input.hadir : total;
     const pilihan = cleanText(input.refleksi_pilihan || 'AUTO');
     const refleksi = cleanText(input.refleksi_manual) ||

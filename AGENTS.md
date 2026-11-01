@@ -98,7 +98,13 @@ node jana-rph.mjs --minggu 1 --semak                     # ujian
 - `sql/` — skema & data Supabase.
 - Jadual Supabase: `jadual_waktu`, `takwim` (+`minggu_rpt`, `status`), `cuti`, `rpt`, `dskp_database`, `rph_entri` (data slot), `rph_log`.
 
-## Belum siap
+## Kehadiran murid (automatik)
 
-- **Kehadiran murid** belum disambung ke sistem kehadiran sekolah. Buat masa ini hadir = jumlah murid
-  (atau nilai yang guru isi). Jika guru beri angka kehadiran, minta guru isi di website.
+- Skrip baca `log_harian` dari **sistem kehadiran sekolah** (projek Supabase lain, baca sahaja).
+- Lajur hadir dalam ringkasan: `✓` dari sistem kehadiran · `✎` guru isi manual · `⏳` belum direkod (anggap penuh).
+- RPH biasanya dijana **sebelum** minggu bermula → banyak slot `⏳`. Itu normal.
+- **Hujung minggu**, bila guru minta "kemas kehadiran minggu N" atau "jana semula minggu N":
+  jalankan `node jana-rph.mjs --minggu N` sekali lagi. Hadir dikemas kini dari sistem kehadiran
+  (SP & status TIDAK berubah) dan PDF dijana semula dengan angka sebenar.
+- Jika guru isi hadir sendiri di website (✎), nilai guru dikekalkan.
+- **Jangan sekali-kali** tulis/ubah apa-apa dalam sistem kehadiran.

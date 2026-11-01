@@ -559,6 +559,12 @@
     const SUPABASE_URL = 'https://pcfxusnrqgardwpqtxqt.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZnh1c25ycWdhcmR3cHF0eHF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDE5OTAsImV4cCI6MjEwMjcxNzk5MH0.jp4_T1RdcZJ7UOVLZsrSo6kxvicM6eIcJE42VkyVLGY';
 
+    // Sistem kehadiran (projek Supabase lain) — BACA SAHAJA jadual log_harian
+    const KEHADIRAN = {
+      url: 'https://swznqxiljivioixutrof.supabase.co',
+      key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3em5xeGlsaml2aW9peHV0cm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMjk1MzMsImV4cCI6MjEwMDgwNTUzM30.a0cpMdecnaw-7MzCPAogVqafUOI4NsBLxJtNkeCchNE'
+    };
+
     const configured = !SUPABASE_URL.includes('YOUR_') && !SUPABASE_ANON_KEY.includes('YOUR_');
     let db = null;
 
@@ -576,6 +582,7 @@
       dskpMap: {},
       visibleSlots: [],
       rpt: [],
+      logHadir: {},    // 'YYYY-MM-DD|KELAS' → {bil_murid, bil_hadir} dari sistem kehadiran
       entri: {}        // rph_entri minggu semasa, kunci: 'YYYY-MM-DD|jadual_id'
     };
     let appStarted = false;   // pengawal: initApp hanya jalan SEKALI
@@ -690,7 +697,7 @@
         jadual_id: item.slot.id,
         kod_sp,
         hadir: hadirRaw === '' || hadirRaw == null ? null : parseInt(hadirRaw, 10),
-        total: item.slot.bil_murid ?? null,
+        total: item.totalLog ?? item.slot.bil_murid ?? null,
         refleksi_pilihan,
         refleksi_manual,
         // SIAP kekal SIAP (dah dicetak) kecuali guru tukar jadi tangguh
@@ -739,7 +746,8 @@
           const el = document.getElementById(`sp_${idx}_${i + 1}`);
           if (el) el.value = v;
         });
-        if (r.hadir != null) $(`hadir_${idx}`).value = r.hadir;
+        const lg = state.logHadir[`${r.tarikh}|${normalizeSubject(item.slot.kelas)}`];
+        if (r.hadir != null && !(lg && r.sumber !== 'MANUAL')) $(`hadir_${idx}`).value = r.hadir;
         if (r.refleksi_pilihan) $(`ref_${idx}`).value = r.refleksi_pilihan;
         if (r.refleksi_manual) $(`refman_${idx}`).value = r.refleksi_manual;
         const chk = document.querySelector(`.slot-check[data-idx="${idx}"]`);
@@ -747,6 +755,32 @@
         const badge = { DRAF: '📝', SIAP: '✅', TANGGUH: '⏸' }[r.status] || '';
         setSaveMark(idx, badge + (r.sumber === 'AGENT' ? '🤖' : ''), '');
         updatePenerangan(idx);
+      });
+    }
+
+    // ---------- Kehadiran: log_harian (REST terus, tanpa login) ----------
+    async function loadLogHadir(dari, hingga) {
+      state.logHadir = {};
+      try {
+        const r = await fetch(`${KEHADIRAN.url}/rest/v1/log_harian?select=tarikh,kelas,bil_murid,bil_hadir&tarikh=gte.${dari}&tarikh=lte.${hingga}`,
+          { headers: { apikey: KEHADIRAN.key, Authorization: 'Bearer ' + KEHADIRAN.key } });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        for (const x of await r.json()) state.logHadir[`${x.tarikh}|${normalizeSubject(x.kelas)}`] = x;
+      } catch (e) { console.warn('Kehadiran tak dapat dibaca:', e.message); }
+    }
+
+    // Isi Hadir/Total dari sistem kehadiran (sebelum applyEntri; nilai manual guru akan menindih)
+    function applyLogHadir() {
+      state.visibleSlots.forEach((item, idx) => {
+        const lg = state.logHadir[`${localISODate(item.tarikh)}|${normalizeSubject(item.slot.kelas)}`];
+        const el = $(`hadir_${idx}`), tot = $(`total_${idx}`);
+        if (!el) return;
+        if (lg) {
+          el.value = lg.bil_hadir; el.title = 'Dari sistem kehadiran'; el.style.borderColor = '#15803d';
+          item.totalLog = lg.bil_murid; if (tot) tot.textContent = lg.bil_murid;
+        } else {
+          el.title = 'Kehadiran belum direkod — anggap penuh'; el.style.borderStyle = 'dashed';
+        }
       });
     }
 
@@ -1006,7 +1040,7 @@
               <td>${escapeHtml(slot.masa_text)}</td>
               <td>${escapeHtml(slot.kelas)}</td>
               <td>${escapeHtml(slot.subjek_text)}</td>
-              <td>${slot.bil_murid ?? ''}</td>
+              <td id="total_${idx}">${slot.bil_murid ?? ''}</td>
               <td><input id="hadir_${idx}" class="hadir-input" type="number" min="0" value="${slot.bil_murid ?? 0}"></td>
               <td>${selectTpl(1)}</td>
               <td>${selectTpl(2)}</td>
@@ -1036,8 +1070,9 @@
       container.innerHTML = html + datalistHtml;
 
       // Tarik data slot minggu ni dari Supabase (bukan localStorage lagi)
-      await loadEntri(dates.map(localISODate));
+      await Promise.all([loadEntri(dates.map(localISODate)), loadLogHadir(localISODate(dates[0]), localISODate(dates[4]))]);
       if (token !== renderToken) return;
+      applyLogHadir();
       applyEntri();
     }
 
@@ -1069,6 +1104,7 @@
           slot, tarikhISO, hari: item.hari,
           codes: [1, 2, 3, 4].map(n => document.getElementById(`sp_${idx}_${n}`).value),
           hadir: hadirRaw === '' ? undefined : parseInt(hadirRaw, 10),
+          total: item.totalLog,
           refleksi_pilihan: document.getElementById(`ref_${idx}`).value,
           refleksi_manual: document.getElementById(`refman_${idx}`).value
         }, state.dskpMap);

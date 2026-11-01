@@ -3,5 +3,9 @@
   "anonKey": "TAMPAL_ANON_KEY_DI_SINI",
   "email": "EMAIL_LOGIN_RPH",
   "password": "PASSWORD_LOGIN_RPH",
-  "keluarDir": "~/Desktop"
+  "keluarDir": "~/Desktop",
+  "kehadiran": {
+    "url": "https://swznqxiljivioixutrof.supabase.co",
+    "anonKey": "ANON_KEY_SISTEM_KEHADIRAN"
+  }
 }

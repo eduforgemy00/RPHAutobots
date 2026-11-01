@@ -147,17 +147,38 @@ const slots = jadual.filter(j => C.HARI_OFFSET[j.hari] !== undefined)
   .map(slot => ({ slot, hari: slot.hari, tarikhISO: C.addDaysISO(weekStart, C.HARI_OFFSET[slot.hari]), weekStartISO: weekStart }));
 const plan = C.planWeek({ slots, history, existing, rpt, cuti, mingguRpt, modOverride, spOverride, paksa: !!args.paksa });
 
-// Kehadiran: Fasa 4 akan tarik dari sistem kehadiran. Buat masa ni: kekal nilai sedia ada / penuh.
-const hadirFor = (p) => existing[`${p.tarikhISO}|${p.slot.id}`]?.hadir ?? p.slot.bil_murid ?? null;
+// ---------- Kehadiran (sistem kehadiransktd, projek Supabase lain) ----------
+// log_harian: satu baris = satu kelas satu hari → bil_murid & bil_hadir. Baca sahaja.
+const logHadir = {};
+if (cfg.kehadiran?.url && cfg.kehadiran?.anonKey) {
+  try {
+    const kdb = createClient(cfg.kehadiran.url, cfg.kehadiran.anonKey);
+    const { data, error } = await kdb.from('log_harian').select('tarikh,kelas,bil_murid,bil_hadir')
+      .gte('tarikh', weekStart).lte('tarikh', weekEnd);
+    if (error) throw error;
+    for (const r of data) logHadir[`${r.tarikh}|${C.normalizeSubject(r.kelas)}`] = r;
+  } catch (e) { out(`⚠ Kehadiran tak dapat dibaca (${e.message}) — guna jumlah murid.`); }
+}
+// Keutamaan: (1) guru isi manual  (2) log_harian  (3) nilai lama  (4) jumlah murid (anggap penuh)
+function kehadiranFor(p) {
+  const ex = existing[`${p.tarikhISO}|${p.slot.id}`];
+  const lg = logHadir[`${p.tarikhISO}|${C.normalizeSubject(p.slot.kelas)}`];
+  if (ex?.sumber === 'MANUAL' && ex.hadir != null) return { hadir: ex.hadir, total: ex.total ?? p.slot.bil_murid, src: 'manual' };
+  if (lg) return { hadir: lg.bil_hadir, total: lg.bil_murid, src: 'kehadiran' };
+  return { hadir: ex?.hadir ?? p.slot.bil_murid ?? null, total: ex?.total ?? p.slot.bil_murid ?? null, src: 'anggaran' };
+}
+const hadirFor = (p) => kehadiranFor(p).hadir;
 
 const ringkas = plan.map(p => ({
   tarikh: p.tarikhISO, hari: p.hari, masa: p.slot.masa_text, kelas: p.slot.kelas, subjek: p.slot.subjek_text,
-  mod: p.mod, tindakan: p.tindakan, status: p.status, sp: p.codes, hadir: hadirFor(p), nota: p.notes
+  mod: p.mod, tindakan: p.tindakan, status: p.status, sp: p.codes,
+  hadir: `${kehadiranFor(p).hadir}/${kehadiranFor(p).total}`, sumber_hadir: kehadiranFor(p).src, nota: p.notes
 }));
 if (!args.json) {
   out(`\n📅 Minggu ${args.minggu} (${weekStart} – ${weekEnd}) · minggu RPT ${mingguRpt}${args.semak ? ' · MOD SEMAK (tiada perubahan)' : ''}\n`);
   for (const r of ringkas)
-    out(`${r.hari.padEnd(7)} ${r.masa.padEnd(14)} ${r.kelas.padEnd(11)} ${r.subjek.padEnd(15)} ${r.tindakan === 'KEKAL' ? '🔒' : r.status === 'TANGGUH' ? '⏸' : '📝'} ${(r.sp.join(', ') || '— tiada —').padEnd(22)} ${r.nota.join(' | ')}`);
+    out(`${r.hari.padEnd(7)} ${r.masa.padEnd(14)} ${r.kelas.padEnd(11)} ${r.subjek.padEnd(15)} ${r.tindakan === 'KEKAL' ? '🔒' : r.status === 'TANGGUH' ? '⏸' : '📝'} ${(r.sp.join(', ') || '— tiada —').padEnd(22)} ${(r.hadir + ({ kehadiran: ' ✓', manual: ' ✎', anggaran: ' ⏳' }[r.sumber_hadir])).padEnd(9)} ${r.nota.join(' | ')}`);
+  out(`\nHadir: ✓ dari sistem kehadiran · ✎ guru isi · ⏳ belum direkod (anggap penuh)`);
 }
 const kosong = plan.filter(p => !p.codes.length);
 if (args.semak) {
@@ -168,12 +189,24 @@ if (args.semak) {
 // ---------- 5. simpan draf ----------
 const tulis = plan.filter(p => p.tindakan === 'TULIS' && p.codes.length);
 for (const p of tulis) {
+  const kh = kehadiranFor(p);
   must(await db.from('rph_entri').upsert({
-    tarikh: p.tarikhISO, jadual_id: p.slot.id, kod_sp: p.codes, hadir: hadirFor(p), total: p.slot.bil_murid ?? null,
+    tarikh: p.tarikhISO, jadual_id: p.slot.id, kod_sp: p.codes, hadir: kh.hadir, total: kh.total,
     refleksi_pilihan: p.refleksi_pilihan, refleksi_manual: p.refleksi_manual, status: p.status,
     sumber: 'AGENT', updated_at: new Date().toISOString()
   }, { onConflict: 'tarikh,jadual_id' }), `Simpan ${p.slot.kelas} ${p.tarikhISO}`);
 }
+// Slot KEKAL (dah dicetak / manual) — kemas kini hadir SAHAJA jika sistem kehadiran dah ada data baru
+// (kecuali guru isi hadir manual). SP & status tidak disentuh. Jadi jana semula hujung minggu = hadir sebenar.
+let hadirDikemas = 0;
+for (const p of plan.filter(p => p.tindakan === 'KEKAL')) {
+  const ex = existing[`${p.tarikhISO}|${p.slot.id}`]; const kh = kehadiranFor(p);
+  if (kh.src === 'kehadiran' && ex && (ex.hadir !== kh.hadir || ex.total !== kh.total)) {
+    must(await db.from('rph_entri').update({ hadir: kh.hadir, total: kh.total }).eq('id', ex.id), 'Kemas hadir');
+    hadirDikemas++;
+  }
+}
+if (hadirDikemas) out(`👥 ${hadirDikemas} slot sedia ada dikemas kini dengan kehadiran sebenar.`);
 out(`\n💾 ${tulis.length} slot disimpan sebagai draf.${kosong.length ? ` ⚠ ${kosong.length} slot tiada SP (lihat nota).` : ''}`);
 if (args.tanpaPdf) { if (args.json) console.log(JSON.stringify({ ok: true, disimpan: tulis.length, pelan: ringkas })); process.exit(0); }
 
@@ -185,7 +218,7 @@ for (const p of plan) {
   const e = fresh.find(r => r.tarikh === p.tarikhISO && r.jadual_id === p.slot.id);
   if (!e || !(e.kod_sp || []).length) continue;
   const res = C.buildRph({ slot: p.slot, tarikhISO: p.tarikhISO, hari: p.hari, codes: e.kod_sp,
-    hadir: e.hadir, refleksi_pilihan: e.refleksi_pilihan, refleksi_manual: e.refleksi_manual }, dskpMap);
+    hadir: e.hadir ?? undefined, total: e.total ?? undefined, refleksi_pilihan: e.refleksi_pilihan, refleksi_manual: e.refleksi_manual }, dskpMap);
   if (res.error) ralat.push(res.error); else rphs.push({ ...res.rph, _status: e.status });
 }
 if (ralat.length) out('\n⚠ Slot dilangkau:\n  ' + ralat.join('\n  '));
