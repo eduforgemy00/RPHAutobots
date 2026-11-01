@@ -760,12 +760,18 @@
 
     // ---------- Kehadiran: log_harian (REST terus, tanpa login) ----------
     async function loadLogHadir(dari, hingga) {
-      state.logHadir = {};
+      state.logHadir = {}; state.jumlahTerkini = {};
       try {
-        const r = await fetch(`${KEHADIRAN.url}/rest/v1/log_harian?select=tarikh,kelas,bil_murid,bil_hadir&tarikh=gte.${dari}&tarikh=lte.${hingga}`,
+        // 30 hari ke belakang juga → jumlah murid terkini untuk hari yang belum direkod
+        const mula = RPHCore.addDaysISO(dari, -30);
+        const r = await fetch(`${KEHADIRAN.url}/rest/v1/log_harian?select=tarikh,kelas,bil_murid,bil_hadir&tarikh=gte.${mula}&tarikh=lte.${hingga}&order=tarikh.asc`,
           { headers: { apikey: KEHADIRAN.key, Authorization: 'Bearer ' + KEHADIRAN.key } });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        for (const x of await r.json()) state.logHadir[`${x.tarikh}|${normalizeSubject(x.kelas)}`] = x;
+        for (const x of await r.json()) {
+          const k = normalizeSubject(x.kelas);
+          if (x.tarikh >= dari) state.logHadir[`${x.tarikh}|${k}`] = x;
+          if (x.bil_murid != null) state.jumlahTerkini[k] = x.bil_murid;
+        }
       } catch (e) { console.warn('Kehadiran tak dapat dibaca:', e.message); }
     }
 
@@ -779,6 +785,8 @@
           el.value = lg.bil_hadir; el.title = 'Dari sistem kehadiran'; el.style.borderColor = '#15803d';
           item.totalLog = lg.bil_murid; if (tot) tot.textContent = lg.bil_murid;
         } else {
+          const jt = state.jumlahTerkini?.[normalizeSubject(item.slot.kelas)];
+          if (jt != null) { el.value = jt; item.totalLog = jt; if (tot) tot.textContent = jt; }
           el.title = 'Kehadiran belum direkod — anggap penuh'; el.style.borderStyle = 'dashed';
         }
       });

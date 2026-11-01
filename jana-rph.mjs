@@ -150,13 +150,19 @@ const plan = C.planWeek({ slots, history, existing, rpt, cuti, mingguRpt, modOve
 // ---------- Kehadiran (sistem kehadiransktd, projek Supabase lain) ----------
 // log_harian: satu baris = satu kelas satu hari → bil_murid & bil_hadir. Baca sahaja.
 const logHadir = {};
+const jumlahTerkini = {};   // kelas → bil_murid dari rekod kehadiran TERKINI (untuk hari belum direkod)
 if (cfg.kehadiran?.url && cfg.kehadiran?.anonKey) {
   try {
     const kdb = createClient(cfg.kehadiran.url, cfg.kehadiran.anonKey);
+    // Tarik 30 hari ke belakang juga — supaya ada jumlah murid terkini walaupun minggu ni belum direkod
     const { data, error } = await kdb.from('log_harian').select('tarikh,kelas,bil_murid,bil_hadir')
-      .gte('tarikh', weekStart).lte('tarikh', weekEnd);
+      .gte('tarikh', C.addDaysISO(weekStart, -30)).lte('tarikh', weekEnd).order('tarikh');
     if (error) throw error;
-    for (const r of data) logHadir[`${r.tarikh}|${C.normalizeSubject(r.kelas)}`] = r;
+    for (const r of data) {
+      const k = C.normalizeSubject(r.kelas);
+      if (r.tarikh >= weekStart) logHadir[`${r.tarikh}|${k}`] = r;
+      if (r.bil_murid != null) jumlahTerkini[k] = r.bil_murid;   // susunan ikut tarikh → yang terakhir menang
+    }
   } catch (e) { out(`⚠ Kehadiran tak dapat dibaca (${e.message}) — guna jumlah murid.`); }
 }
 // Keutamaan: (1) guru isi manual  (2) log_harian  (3) nilai lama  (4) jumlah murid (anggap penuh)
@@ -165,7 +171,9 @@ function kehadiranFor(p) {
   const lg = logHadir[`${p.tarikhISO}|${C.normalizeSubject(p.slot.kelas)}`];
   if (ex?.sumber === 'MANUAL' && ex.hadir != null) return { hadir: ex.hadir, total: ex.total ?? p.slot.bil_murid, src: 'manual' };
   if (lg) return { hadir: lg.bil_hadir, total: lg.bil_murid, src: 'kehadiran' };
-  return { hadir: ex?.hadir ?? p.slot.bil_murid ?? null, total: ex?.total ?? p.slot.bil_murid ?? null, src: 'anggaran' };
+  // Belum direkod: anggap penuh, guna jumlah murid terkini dari sistem kehadiran (bukan jadual waktu yang mungkin lapuk)
+  const jt = jumlahTerkini[C.normalizeSubject(p.slot.kelas)] ?? p.slot.bil_murid ?? null;
+  return { hadir: jt, total: jt, src: 'anggaran' };
 }
 const hadirFor = (p) => kehadiranFor(p).hadir;
 
