@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RPH Autobot v2 - Login</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <title>RPH Autobot v3</title>
+  <!-- Versi dipin: elak sistem rosak bila library keluar update baru -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <!-- Logik kongsi dengan skrip agent (jana-rph.mjs). Ubah template RPH dalam fail ni. -->
+  <script src="rph-core.js"></script>
   <style>
     :root {
       --radius: 14px;
@@ -162,11 +165,15 @@
       #print-area { display: block !important; }
     }
 
-    @page { size: A4; margin: 10mm; }
+    /* margin 0 = browser tiada ruang untuk cetak header/footer (tarikh, tajuk, URL).
+       Jidar sebenar dibuat dengan padding dalam .rph-page */
+    @page { size: A4; margin: 0; }
 
     .rph-page {
-      width: 190mm;
-      height: 277mm;
+      width: 210mm;
+      height: 297mm;
+      padding: 10mm;
+      box-sizing: border-box;
       overflow: hidden;
       page-break-after: always;
       font-family: Arial, sans-serif;
@@ -244,7 +251,7 @@
   <!-- LOGIN SCREEN -->
   <div id="loginScreen">
     <div class="card login-box">
-      <h2> RPH Autobot v2</h2>
+      <h2>RPH Autobot v3</h2>
       <div class="small" style="text-align:center; margin-bottom:24px;">SK Tanjong Dawai</div>
       
       <div>
@@ -274,7 +281,7 @@
     <div class="container">
       <header class="card topbar">
         <div>
-          <h1>RPH Autobot v2</h1>
+          <h1>RPH Autobot v3</h1>
           <div class="small">SK Tanjong Dawai • Jana RPH A4 fixed • Bulk PDF</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -343,6 +350,7 @@
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               <button class="primary" id="loadSlotsBtn">Papar Slot</button>
               <button class="secondary" id="selectAllBtn">Pilih Semua</button>
+              <button class="secondary" id="cadangBtn" title="Isi SP kosong ikut SP terakhir kelas / RPT (logik sama dengan agent)">✨ Cadang SP</button>
             </div>
           </div>
         </div>
@@ -489,6 +497,7 @@
                   <th>Kelas</th>
                   <th>Subjek</th>
                   <th>Murid</th>
+                  <th title="SAMBUNG = teruskan SP terakhir · RPT = ikut RPT minggu semasa">Mod SP</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -565,18 +574,16 @@
       takwim: [],
       dskp: [],
       dskpMap: {},
-      visibleSlots: []
+      visibleSlots: [],
+      rpt: [],
+      entri: {}        // rph_entri minggu semasa, kunci: 'YYYY-MM-DD|jadual_id'
     };
+    let appStarted = false;   // pengawal: initApp hanya jalan SEKALI
+    let renderToken = 0;
 
     const $ = (id) => document.getElementById(id);
 
-    const REFLEKSI_OPTIONS = [
-      'PdP ditangguhkan kerana Mesyuarat / Kursus / Sukan.',
-      'PdP ditangguhkan kerana Program Sekolah.',
-      'PdP ditangguhkan kerana Cuti Peristiwa / Cuti Umum.',
-      'Aktiviti PdP dibawa ke sesi akan datang kerana murid tidak menguasai.',
-      'Guru tidak hadir atas urusan Cuti Sakit.'
-    ];
+    const REFLEKSI_OPTIONS = RPHCore.REFLEKSI_OPTIONS;
 
     // ======================================================
     // AUTH FUNCTIONS
@@ -616,8 +623,8 @@
 
     async function handleLogout() {
       await db.auth.signOut();
-      currentUser = null;
-      showLogin();
+      // Reload penuh: kosongkan state & listener, elak data akaun lama tertinggal
+      location.reload();
     }
 
     function showLoginError(msg) {
@@ -629,6 +636,10 @@
     function showApp() {
       $('loginScreen').style.display = 'none';
       $('appContent').style.display = 'block';
+      // Login + onAuthStateChange boleh panggil showApp 2 kali.
+      // Tanpa pengawal ni, event listener jadi berganda → print 2x, rph_log 2x.
+      if (appStarted) return;
+      appStarted = true;
       initApp();
     }
 
@@ -641,151 +652,110 @@
     }
 
     // ======================================================
-    // UTIL
+    // UTIL — semua dari rph-core.js (satu sumber kebenaran)
     // ======================================================
-    function escapeHtml(value) {
-      return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
-
-    function normalizeSubject(value) {
-      return String(value || '').toUpperCase().trim().replace(/\s+/g, ' ');
-    }
-
-    function cleanText(value) {
-      return String(value || '').trim().replace(/\s+/g, ' ');
-    }
-
-    function stripEndPeriod(value) {
-      return cleanText(value).replace(/\.+$/, '');
-    }
-
-    function lowerFirstSentence(value) {
-      const text = stripEndPeriod(value);
-      if (!text) return '';
-      return text.charAt(0).toLowerCase() + text.slice(1);
-    }
-
-    function uniqueJoin(values) {
-      return [...new Set(values.map(cleanText).filter(Boolean))].join(', ');
-    }
-
-    function truncateText(value, max) {
-      const text = cleanText(value);
-      return text.length > max ? text.slice(0, max) + '…' : text;
-    }
-
-    function localISODate(date) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-
-    function formatDisplayDate(date) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${d}/${m}/${y}`;
-    }
-
-    function getTahunFromKelas(kelas) {
-      const match = String(kelas || '').match(/^(\d)/);
-      return match ? parseInt(match[1], 10) : null;
-    }
-
-    function parseMasaForSort(masaText) {
-      const start = String(masaText || '').split('-')[0].trim();
-      const [h, m] = start.split(':').map(Number);
-      let hour = h || 0;
-      if (hour < 7) hour += 12;
-      return (hour * 60) + (m || 0);
-    }
+    const {
+      escapeHtml, normalizeSubject, cleanText, stripEndPeriod, lowerFirstSentence,
+      uniqueJoin, joinDan, labelKemahiran, truncateText, localISODate, formatDisplayDate,
+      getTahunFromKelas, parseMasaForSort
+    } = RPHCore;
 
     // ======================================================
-    // STATE PERSISTENCE (auto-save data slot)
+    // RPH_ENTRI — simpanan slot dalam Supabase (ganti localStorage)
+    // Pola: satu baris = (tarikh, jadual_id). Upsert ikut kunci unik tu,
+    // jadi website, Hermes & Antigravity semua baca/tulis data yang SAMA.
     // ======================================================
-    function getStateKey() {
-      const year = $('yearInput').value || 2026;
-      const weekStart = $('weekStart').value || 'no-week';
-      return `rph_state_${year}_${weekStart}`;
+    const TANGGUH_PREFIX = ['PdP ditangguhkan', 'Guru tidak hadir'];
+    const saveTimers = {};
+
+    function entriKey(tarikhISO, jadualId) { return `${tarikhISO}|${jadualId}`; }
+
+    function setSaveMark(idx, text, color) {
+      const el = document.getElementById(`save_${idx}`);
+      if (el) { el.textContent = text; el.style.color = color || ''; }
     }
 
-    function saveState() {
-      const key = getStateKey();
-      const data = {};
+    function readSlotForm(idx) {
+      const item = state.visibleSlots[idx];
+      const kod_sp = [1, 2, 3, 4]
+        .map(n => cleanText(document.getElementById(`sp_${idx}_${n}`)?.value))
+        .filter(Boolean);
+      const hadirRaw = document.getElementById(`hadir_${idx}`)?.value;
+      const refleksi_pilihan = document.getElementById(`ref_${idx}`)?.value || 'AUTO';
+      const refleksi_manual = cleanText(document.getElementById(`refman_${idx}`)?.value) || null;
+      const tangguh = TANGGUH_PREFIX.some(p => refleksi_pilihan.startsWith(p));
+      const lama = state.entri[entriKey(localISODate(item.tarikh), item.slot.id)];
+      return {
+        tarikh: localISODate(item.tarikh),
+        jadual_id: item.slot.id,
+        kod_sp,
+        hadir: hadirRaw === '' || hadirRaw == null ? null : parseInt(hadirRaw, 10),
+        total: item.slot.bil_murid ?? null,
+        refleksi_pilihan,
+        refleksi_manual,
+        // SIAP kekal SIAP (dah dicetak) kecuali guru tukar jadi tangguh
+        status: tangguh ? 'TANGGUH' : (lama?.status === 'SIAP' ? 'SIAP' : 'DRAF'),
+        sumber: 'MANUAL',
+        updated_at: new Date().toISOString()
+      };
+    }
 
+    // Debounce: tunggu 600ms selepas berhenti menaip baru simpan (kurang request)
+    function queueSave(idx) {
+      clearTimeout(saveTimers[idx]);
+      setSaveMark(idx, '…', '#a16207');
+      saveTimers[idx] = setTimeout(() => saveSlot(idx), 600);
+    }
+
+    async function saveSlot(idx) {
+      if (!db || !state.visibleSlots[idx]) return;
+      const row = readSlotForm(idx);
+      const { data, error } = await db.from('rph_entri')
+        .upsert(row, { onConflict: 'tarikh,jadual_id' })
+        .select()
+        .single();
+      if (error) {
+        console.error('Gagal simpan slot', idx, error);
+        setSaveMark(idx, '✗', '#dc2626');
+        return;
+      }
+      state.entri[entriKey(data.tarikh, data.jadual_id)] = data;
+      setSaveMark(idx, '✓', '#15803d');
+    }
+
+    async function loadEntri(datesISO) {
+      state.entri = {};
+      if (!db || !datesISO.length) return;
+      const { data, error } = await db.from('rph_entri').select('*').in('tarikh', datesISO);
+      if (error) { console.error(error); alert('Gagal baca rph_entri: ' + error.message); return; }
+      for (const r of data || []) state.entri[entriKey(r.tarikh, r.jadual_id)] = r;
+    }
+
+    function applyEntri() {
       state.visibleSlots.forEach((item, idx) => {
-        const slotState = {
-          sp: [],
-          hadir: null,
-          ref: null,
-          refman: null,
-          checked: false
-        };
-
-        for (let i = 1; i <= 4; i++) {
-          const spEl = document.getElementById(`sp_${idx}_${i}`);
-          if (spEl) slotState.sp.push(spEl.value);
-        }
-
-        const hadirEl = document.getElementById(`hadir_${idx}`);
-        if (hadirEl) slotState.hadir = hadirEl.value;
-
-        const refEl = document.getElementById(`ref_${idx}`);
-        if (refEl) slotState.ref = refEl.value;
-
-        const refmanEl = document.getElementById(`refman_${idx}`);
-        if (refmanEl) slotState.refman = refmanEl.value;
-
-        const checkEl = document.querySelector(`.slot-check[data-idx="${idx}"]`);
-        if (checkEl) slotState.checked = checkEl.checked;
-
-        data[idx] = slotState;
+        const r = state.entri[entriKey(localISODate(item.tarikh), item.slot.id)];
+        if (!r) return;
+        (r.kod_sp || []).slice(0, 4).forEach((v, i) => {
+          const el = document.getElementById(`sp_${idx}_${i + 1}`);
+          if (el) el.value = v;
+        });
+        if (r.hadir != null) $(`hadir_${idx}`).value = r.hadir;
+        if (r.refleksi_pilihan) $(`ref_${idx}`).value = r.refleksi_pilihan;
+        if (r.refleksi_manual) $(`refman_${idx}`).value = r.refleksi_manual;
+        const chk = document.querySelector(`.slot-check[data-idx="${idx}"]`);
+        if (chk) chk.checked = (r.kod_sp || []).length > 0 || r.status === 'TANGGUH';
+        const badge = { DRAF: '📝', SIAP: '✅', TANGGUH: '⏸' }[r.status] || '';
+        setSaveMark(idx, badge + (r.sumber === 'AGENT' ? '🤖' : ''), '');
+        updatePenerangan(idx);
       });
-
-      localStorage.setItem(key, JSON.stringify(data));
     }
 
-    function loadState() {
-      const key = getStateKey();
-      const saved = localStorage.getItem(key);
-      if (!saved) return;
-
-      try {
-        const data = JSON.parse(saved);
-
-        state.visibleSlots.forEach((item, idx) => {
-          const slotState = data[idx];
-          if (!slotState) return;
-
-          (slotState.sp || []).forEach((val, i) => {
-            const spEl = document.getElementById(`sp_${idx}_${i + 1}`);
-            if (spEl) spEl.value = val;
-          });
-
-          const hadirEl = document.getElementById(`hadir_${idx}`);
-          if (hadirEl && slotState.hadir !== null) hadirEl.value = slotState.hadir;
-
-          const refEl = document.getElementById(`ref_${idx}`);
-          if (refEl && slotState.ref) refEl.value = slotState.ref;
-
-          const refmanEl = document.getElementById(`refman_${idx}`);
-          if (refmanEl && slotState.refman) refmanEl.value = slotState.refman;
-
-          const checkEl = document.querySelector(`.slot-check[data-idx="${idx}"]`);
-          if (checkEl) checkEl.checked = slotState.checked;
-        });
-
-        state.visibleSlots.forEach((item, idx) => {
-          updatePenerangan(idx);
-        });
-      } catch (err) {
-        console.warn('Gagal load state:', err);
+    async function markSiap(rphs) {
+      const rows = rphs.filter(r => r.status !== 'TANGGUH')
+        .map(r => ({ tarikh: localISODate(r.tarikh_date), jadual_id: r.id }));
+      for (const r of rows) {
+        await db.from('rph_entri').update({ status: 'SIAP' })
+          .eq('tarikh', r.tarikh).eq('jadual_id', r.jadual_id);
       }
     }
 
@@ -837,28 +807,34 @@
       try {
         const year = parseInt($('yearInput').value, 10) || 2026;
 
-        const [subjectsRes, jadualRes, takwimRes, dskpRes] = await Promise.all([
+        const [subjectsRes, jadualRes, takwimRes, dskpRes, rptRes] = await Promise.all([
           db.from('subjects').select('*').eq('active', true).order('nama'),
           db.from('jadual_waktu').select('*').eq('active', true).eq('tahun', year),
           db.from('takwim').select('*').eq('tahun', year).order('minggu'),
-          db.from('dskp_database').select('*').eq('active', true)
+          db.from('dskp_database').select('*').eq('active', true),
+          db.from('rpt').select('*')
         ]);
+
+        // Supabase TAK throw bila gagal — dia pulangkan { error }. Kena semak sendiri.
+        const gagal = [subjectsRes, jadualRes, takwimRes, dskpRes, rptRes].filter(r => r.error);
+        if (gagal.length) throw new Error(gagal.map(r => r.error.message).join(' | '));
 
         state.subjects = subjectsRes.data || [];
         state.jadual = jadualRes.data || [];
         state.takwim = takwimRes.data || [];
         state.dskp = dskpRes.data || [];
+        state.rpt = rptRes.data || [];
 
         buildDskpMap();
         renderSubjectSelects();
         renderTakwimOptions();
-        renderDashboard();
+        await renderDashboard();
         renderDskpTable();
         renderJadualTable();
         renderTakwimTable();
       } catch (err) {
         console.error(err);
-        alert('Ralat semasa load data. Semak connection.');
+        alert('Ralat semasa load data: ' + err.message);
       }
     }
 
@@ -944,7 +920,7 @@
       el.innerHTML = html;
     }
 
-    function renderDashboard() {
+    async function renderDashboard() {
       const container = $('slotContainer');
       const weekStart = $('weekStart').value;
 
@@ -969,12 +945,14 @@
 
       state.visibleSlots = [];
       const spDatalists = {};
+      const token = ++renderToken;   // kalau render baru bermula semasa await, render lama berhenti
 
       let html = `
         <table class="table">
           <thead>
             <tr>
               <th>Pilih</th>
+              <th title="📝 Draf · ✅ Siap dicetak · ⏸ Tangguh · 🤖 diisi agent">Status</th>
               <th>Hari / Tarikh</th>
               <th>Masa</th>
               <th>Kelas</th>
@@ -1023,6 +1001,7 @@
           html += `
             <tr>
               <td><input type="checkbox" class="slot-check" data-idx="${idx}" style="width:auto;"></td>
+              <td id="save_${idx}" style="text-align:center;"></td>
               <td>${escapeHtml(hari)}<br><span class="small">${formatDisplayDate(date)}</span></td>
               <td>${escapeHtml(slot.masa_text)}</td>
               <td>${escapeHtml(slot.kelas)}</td>
@@ -1056,113 +1035,16 @@
 
       container.innerHTML = html + datalistHtml;
 
-      // Load balik data yang dah disimpan
-      loadState();
+      // Tarik data slot minggu ni dari Supabase (bukan localStorage lagi)
+      await loadEntri(dates.map(localISODate));
+      if (token !== renderToken) return;
+      applyEntri();
     }
 
     // ======================================================
     // RPH GENERATION
     // ======================================================
-    function generateAktiviti(skText, spTexts) {
-      const topik = lowerFirstSentence(skText);
-      const sp1 = lowerFirstSentence(spTexts[0] || '');
-      const sp2 = spTexts[1] ? lowerFirstSentence(spTexts[1]) : '';
-      const perkembangan2 = sp2 ? `${sp1} dan ${sp2}.` : `${sp1}.`;
-
-      return `Set induksi:
-1. Guru memperkenalkan topik ${topik} dengan menggunakan teknik soal jawab/ bahan bantu mengajar.
-
-Perkembangan:
-1. Secara bimbingan guru, murid merumuskan konsep asas berkaitan ${sp1}.
-2. Murid dibahagikan kepada kumpulan untuk menjalankan aktiviti penerokaan/ simulasi tentang ${perkembangan2}
-3. Murid berbincang untuk menghasilkan dan merekodkan hasil dapatan dalam pelbagai bentuk kreatif.
-4. Kumpulan murid membentangkan dapatan mereka dan bersoal jawab dengan rakan sekelas.
-
-Penutup:
-1. Murid membuat kesimpulan tajuk pembelajaran pada hari ini dengan bimbingan guru.`;
-    }
-
-    function buildRphPage(rph) {
-      const subjek = cleanText(rph.subjek_text);
-      const skDisplay = `${cleanText(rph.kod_sk)} ${cleanText(rph.standard_kandungan)}`;
-
-      return `
-        <div class="rph-page">
-          <table class="rph-table">
-            <colgroup>
-              <col style="width:16.8%">
-              <col style="width:18.9%">
-              <col style="width:12.6%">
-              <col style="width:18.9%">
-              <col style="width:11.6%">
-              <col style="width:21.2%">
-            </colgroup>
-
-            <tr>
-              <td colspan="6" class="rph-title">RANCANGAN PENGAJARAN HARIAN</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">MATA PELAJARAN</td>
-              <td>${escapeHtml(subjek)}</td>
-              <td class="rph-label">TARIKH</td>
-              <td>${formatDisplayDate(rph.tarikh_date)}</td>
-              <td class="rph-label">HARI</td>
-              <td>${escapeHtml(rph.hari)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">KELAS</td>
-              <td>${escapeHtml(rph.kelas)}</td>
-              <td class="rph-label">MASA</td>
-              <td>${escapeHtml(rph.masa_text)}</td>
-              <td class="rph-label">BIL. MURID</td>
-              <td>${rph.hadir}/${rph.total} orang</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">S. KANDUNGAN</td>
-              <td colspan="5">${escapeHtml(skDisplay)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">S. PEMBELAJARAN</td>
-              <td colspan="5">${escapeHtml(rph.spDisplay)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">OBJEKTIF PDP</td>
-              <td colspan="5">${escapeHtml(rph.objektif)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">AKTIVITI</td>
-              <td colspan="5" class="rph-aktiviti">${escapeHtml(rph.aktiviti)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">KEMAHIRAN SAINS</td>
-              <td colspan="5">${escapeHtml(rph.kemahiran)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">KBAT</td>
-              <td colspan="5">${escapeHtml(rph.kbat)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">EMK/ NILAI</td>
-              <td colspan="5">${escapeHtml(rph.emk)}</td>
-            </tr>
-
-            <tr>
-              <td class="rph-label">REFLEKSI</td>
-              <td colspan="5">${escapeHtml(rph.refleksi)}</td>
-            </tr>
-          </table>
-        </div>
-      `;
-    }
+    // generateAktiviti / buildRphPage kini dalam rph-core.js
 
     async function generateBulkPdf() {
       const checked = [...document.querySelectorAll('.slot-check:checked')];
@@ -1179,75 +1061,23 @@ Penutup:
         const idx = checkbox.dataset.idx;
         const item = state.visibleSlots[idx];
         const slot = item.slot;
+        const tarikhISO = localISODate(item.tarikh);
+        const hadirRaw = document.getElementById(`hadir_${idx}`).value;
 
-        const codes = [1, 2, 3, 4]
-          .map(n => cleanText(document.getElementById(`sp_${idx}_${n}`).value))
-          .filter(Boolean);
+        // Logik sama dengan skrip agent — RPHCore.buildRph
+        const res = RPHCore.buildRph({
+          slot, tarikhISO, hari: item.hari,
+          codes: [1, 2, 3, 4].map(n => document.getElementById(`sp_${idx}_${n}`).value),
+          hadir: hadirRaw === '' ? undefined : parseInt(hadirRaw, 10),
+          refleksi_pilihan: document.getElementById(`ref_${idx}`).value,
+          refleksi_manual: document.getElementById(`refman_${idx}`).value
+        }, state.dskpMap);
 
-        if (!codes.length) {
-          missing.push(`${slot.kelas} ${slot.masa_text}: Tiada kod SP dipilih`);
-          continue;
-        }
-
-        const tahun = getTahunFromKelas(slot.kelas);
-        const subjekNorm = normalizeSubject(slot.subjek_text);
-        const dskpRows = [];
-
-        for (const code of codes) {
-          const row = state.dskpMap[`${subjekNorm}|${tahun}|${code}`];
-
-          if (!row) {
-            missing.push(`${slot.subjek_text} ${slot.kelas}: Kod SP ${code} tidak jumpa`);
-          } else {
-            dskpRows.push(row);
-          }
-        }
-
-        if (dskpRows.length !== codes.length) continue;
-
-        const firstRow = dskpRows[0];
-        const spTexts = dskpRows.map(r => cleanText(r.standard_pembelajaran));
-
-        const spDisplay = dskpRows
-          .map(r => `${cleanText(r.kod_sp)} ${cleanText(r.standard_pembelajaran)}`)
-          .join('\n');
-
-        const objektif = spTexts.length === 1
-          ? `Pada akhir PdP, semua murid dapat ${lowerFirstSentence(spTexts[0])} dengan bimbingan guru.`
-          : `Pada akhir PdP, semua murid dapat:\n` +
-            spTexts.map((sp, i) => `${i + 1}. ${lowerFirstSentence(sp)}`).join('\n') +
-            `\ndengan bimbingan guru.`;
-        const aktiviti = generateAktiviti(cleanText(firstRow.standard_kandungan), spTexts);
-
-        const kemahiran = uniqueJoin(dskpRows.map(r => r.kemahiran));
-        const kbat = uniqueJoin(dskpRows.map(r => r.kbat));
-        const emk = uniqueJoin(dskpRows.map(r => r.emk_nilai));
-
-        const hadir = parseInt(document.getElementById(`hadir_${idx}`).value, 10) || 0;
-        const total = slot.bil_murid || 0;
-
-        const refSelect = cleanText(document.getElementById(`ref_${idx}`).value);
-        const refManual = cleanText(document.getElementById(`refman_${idx}`).value);
-        const refleksi = refManual || (refSelect === 'AUTO'
-          ? `${hadir}/${total} murid dapat mencapai objektif yang ditetapkan.`
-          : refSelect);
-
+        if (res.error) { missing.push(res.error); continue; }
         rphs.push({
-          ...slot,
+          ...res.rph,
           tarikh_date: item.tarikh,
-          hari: item.hari,
-          kod_sk: firstRow.kod_sk,
-          standard_kandungan: firstRow.standard_kandungan,
-          spCodes: codes,
-          spDisplay,
-          objektif,
-          aktiviti,
-          kemahiran,
-          kbat,
-          emk,
-          hadir,
-          total,
-          refleksi
+          status: state.entri[entriKey(tarikhISO, slot.id)]?.status
         });
       }
 
@@ -1261,14 +1091,71 @@ Penutup:
         return;
       }
 
-      const pagesHtml = rphs.map(buildRphPage).join('');
+      const pagesHtml = rphs.map(RPHCore.buildRphPage).join('');
       $('print-area').innerHTML = pagesHtml;
 
       saveLogs(rphs).catch(err => console.warn('Log tidak disimpan:', err));
 
-      setTimeout(() => {
+      // Tajuk dokumen = nama fail PDF cadangan semasa "Save as PDF"
+      const minggu = state.takwim.find(t => t.tarikh_ahad === $('weekStart').value)?.minggu;
+      const tajukAsal = document.title;
+      document.title = minggu ? `RPH Minggu ${minggu}` : `RPH ${$('weekStart').value}`;
+
+      setTimeout(async () => {
         window.print();
+        document.title = tajukAsal;
+        await markSiap(rphs);
+        applyEntriStatusOnly();
       }, 100);
+    }
+
+    // ✨ Cadang SP untuk slot yang KOSONG sahaja (slot berisi tak disentuh)
+    async function cadangSP() {
+      const weekStart = $('weekStart').value;
+      const tk = state.takwim.find(t => t.tarikh_ahad === weekStart);
+      if (!tk) { alert('Minggu ni belum ada dalam Takwim. Tambah di tab Takwim dulu.'); return; }
+      const datesISO = [...new Set(state.visibleSlots.map(s => localISODate(s.tarikh)))];
+      const [histRes, cutiRes, jRes] = await Promise.all([
+        db.from('rph_entri').select('*').lt('tarikh', weekStart).gte('tarikh', RPHCore.addDaysISO(weekStart, -150)),
+        db.from('cuti').select('*').in('tarikh', datesISO),
+        db.from('jadual_waktu').select('id,kelas,subjek_text')
+      ]);
+      const err = [histRes, cutiRes, jRes].find(r => r.error);
+      if (err) { alert('Gagal baca data: ' + err.error.message); return; }
+      const jAll = Object.fromEntries(jRes.data.map(j => [j.id, j]));
+      const history = histRes.data.filter(h => jAll[h.jadual_id])
+        .map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }));
+
+      const plan = RPHCore.planWeek({
+        slots: state.visibleSlots.map(v => ({ slot: v.slot, hari: v.hari, tarikhISO: localISODate(v.tarikh), weekStartISO: weekStart })),
+        history, existing: state.entri, rpt: state.rpt,
+        cuti: Object.fromEntries(cutiRes.data.map(c => [c.tarikh, c.sebab])),
+        mingguRpt: tk.minggu_rpt ?? tk.minggu, modOverride: {}, paksa: false
+      });
+
+      let diisi = 0; const nota = [];
+      state.visibleSlots.forEach((v, idx) => {
+        const p = plan.find(x => x.slot.id === v.slot.id && x.tarikhISO === localISODate(v.tarikh));
+        if (!p) return;
+        const kosong = [1, 2, 3, 4].every(n => !cleanText($(`sp_${idx}_${n}`).value));
+        if (!kosong || !p.codes.length) { if (kosong && p.notes.length) nota.push(`${v.slot.kelas} ${v.hari}: ${p.notes.join('; ')}`); return; }
+        p.codes.slice(0, 4).forEach((c, i) => { $(`sp_${idx}_${i + 1}`).value = c; });
+        if (p.status === 'TANGGUH') $(`ref_${idx}`).value = p.refleksi_pilihan;
+        if (p.refleksi_manual) $(`refman_${idx}`).value = p.refleksi_manual;
+        updatePenerangan(idx); queueSave(idx); diisi++;
+        const amaran = p.notes.filter(n => n.startsWith('⚠'));
+        if (amaran.length) nota.push(`${v.slot.kelas} ${v.hari}: ${amaran.join('; ')}`);
+      });
+      alert(`✨ ${diisi} slot diisi.` + (nota.length ? '\n\n' + nota.join('\n') : ''));
+    }
+
+    // Kemas kini ikon status selepas cetak tanpa render semula jadual
+    async function applyEntriStatusOnly() {
+      await loadEntri([...new Set(state.visibleSlots.map(s => localISODate(s.tarikh)))]);
+      state.visibleSlots.forEach((item, idx) => {
+        const r = state.entri[entriKey(localISODate(item.tarikh), item.slot.id)];
+        if (r) setSaveMark(idx, { DRAF: '📝', SIAP: '✅', TANGGUH: '⏸' }[r.status] || '', '');
+      });
     }
 
     async function saveLogs(rphs) {
@@ -1289,7 +1176,8 @@ Penutup:
         status: 'JANA'
       }));
 
-      await db.from('rph_log').insert(rows);
+      const { error } = await db.from('rph_log').insert(rows);
+      if (error) console.warn('rph_log gagal:', error.message);
     }
 
     // ======================================================
@@ -1315,7 +1203,9 @@ Penutup:
                (a.kod_sp || '').localeCompare(b.kod_sp || '', undefined, { numeric: true });
       });
 
-      $('dskpCount').textContent = `${rows.length} rekod`;
+      $('dskpCount').textContent = rows.length > 300
+        ? `${rows.length} rekod (papar 300 pertama — guna filter)`
+        : `${rows.length} rekod`;
 
       if (!rows.length) {
         $('dskpTableBody').innerHTML = '<tr><td colspan="6"><div class="muted-box">Tiada data DSKP.</div></td></tr>';
@@ -1409,7 +1299,7 @@ Penutup:
       });
 
       if (!rows.length) {
-        $('jadualTableBody').innerHTML = '<tr><td colspan="6"><div class="muted-box">Tiada jadual waktu.</div></td></tr>';
+        $('jadualTableBody').innerHTML = '<tr><td colspan="7"><div class="muted-box">Tiada jadual waktu.</div></td></tr>';
         return;
       }
 
@@ -1420,6 +1310,9 @@ Penutup:
           <td>${escapeHtml(row.kelas)}</td>
           <td>${escapeHtml(row.subjek_text)}</td>
           <td>${row.bil_murid ?? ''}</td>
+          <td><select onchange="setModSp('${row.id}', this.value)" style="width:auto;">
+            <option ${row.mod_sp !== 'RPT' ? 'selected' : ''}>SAMBUNG</option>
+            <option ${row.mod_sp === 'RPT' ? 'selected' : ''}>RPT</option></select></td>
           <td><button class="danger" onclick="deleteJadual('${row.id}')">Padam</button></td>
         </tr>
       `).join('');
@@ -1462,6 +1355,12 @@ Penutup:
       $('jadualAddMasa').value = '';
       $('jadualAddKelas').value = '';
       $('jadualAddMurid').value = '';
+    }
+
+    async function setModSp(id, mod) {
+      const { error } = await db.from('jadual_waktu').update({ mod_sp: mod }).eq('id', id);
+      if (error) { alert(error.message); return; }
+      const j = state.jadual.find(x => x.id === id); if (j) j.mod_sp = mod;
     }
 
     async function deleteJadual(id) {
@@ -1562,25 +1461,24 @@ Penutup:
         const checkboxes = [...document.querySelectorAll('.slot-check')];
         const anyUnchecked = checkboxes.some(cb => !cb.checked);
         checkboxes.forEach(cb => cb.checked = anyUnchecked);
-        saveState();
       });
 
       $('generateBtn').addEventListener('click', generateBulkPdf);
+      $('cadangBtn').addEventListener('click', cadangSP);
 
-      // Auto-save state bila user ubah apa-apa dalam slot table
+      // Auto-simpan ke rph_entri bila ubah SP / hadir / refleksi.
+      // idx datang dari id elemen, contoh 'hadir_3' → 3
+      const idxOf = (el) => el.dataset.idx ?? el.id.split('_')[1];
       $('slotContainer').addEventListener('input', (e) => {
-        if (e.target.matches('.sp-select, .hadir-input, .ref-select, .refman-input')) {
-          saveState();
-          if (e.target.classList.contains('sp-select')) {
-            updatePenerangan(e.target.dataset.idx);
-          }
+        if (e.target.matches('.sp-select, .hadir-input, .refman-input')) {
+          const idx = idxOf(e.target);
+          if (e.target.classList.contains('sp-select')) updatePenerangan(idx);
+          queueSave(idx);
         }
       });
 
       $('slotContainer').addEventListener('change', (e) => {
-        if (e.target.matches('.slot-check, .ref-select')) {
-          saveState();
-        }
+        if (e.target.matches('.ref-select')) queueSave(idxOf(e.target));
       });
 
       await loadBase();

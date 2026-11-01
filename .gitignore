@@ -1,0 +1,6 @@
+# Jangan push ke GitHub — ada email & password
+rph-agent.config.json
+
+node_modules/
+*.pdf
+DSKP dan RPT/

@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+/* =====================================================================
+ * jana-rph.mjs — skrip untuk AGENT (Hermes / Antigravity / manusia)
+ *
+ *   node jana-rph.mjs --minggu 39 --semak        # tengok cadangan sahaja (tiada tulis)
+ *   node jana-rph.mjs --minggu 39                # simpan draf + jana PDF ke Desktop
+ *
+ * Pilihan:
+ *   --tahun 2026                 tahun takwim (default: tahun semasa)
+ *   --rpt "4 KREATIF,5 DEDIKASI" kelas yang ikut RPT minggu ni (pemantauan). --rpt semua = semua kelas
+ *   --cuti 2026-11-03="Sukan Tahunan"   tarikh tak mengajar (boleh ulang). Slot jadi TANGGUH
+ *   --tarikh-ahad 2026-11-01     cipta baris takwim jika minggu belum ada
+ *   --paksa                      tindih juga slot MANUAL/SIAP (berhati-hati)
+ *   --tanpa-pdf                  simpan draf sahaja
+ *   --json                       output pelan dalam JSON (untuk agent)
+ *
+ * Kod keluar: 0 = berjaya, 2 = perlu input guru (lihat mesej), 1 = ralat
+ * ===================================================================== */
+import { createRequire } from 'node:module';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const HERE = dirname(fileURLToPath(import.meta.url));
+const C = require('./rph-core.js');
+
+// ---------- argumen ----------
+function parseArgs(argv) {
+  const a = { cuti: {}, rpt: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const k = argv[i], v = argv[i + 1];
+    if (k === '--minggu') { a.minggu = parseInt(v, 10); i++; }
+    else if (k === '--tahun') { a.tahun = parseInt(v, 10); i++; }
+    else if (k === '--rpt') { a.rpt = v.split(',').map(s => s.trim()).filter(Boolean); i++; }
+    else if (k === '--cuti') { const [t, ...s] = v.split('='); a.cuti[t.trim()] = s.join('=').replace(/^"|"$/g, '').trim() || 'Cuti'; i++; }
+    else if (k === '--tarikh-ahad') { a.tarikhAhad = v; i++; }
+    else if (k === '--paksa') a.paksa = true;
+    else if (k === '--semak') a.semak = true;
+    else if (k === '--tanpa-pdf') a.tanpaPdf = true;
+    else if (k === '--json') a.json = true;
+  }
+  return a;
+}
+const args = parseArgs(process.argv.slice(2));
+const out = (msg) => { if (!args.json) console.log(msg); };
+const berhenti = (code, mesej, extra = {}) => {
+  if (args.json) console.log(JSON.stringify({ ok: code === 0, kod: code, mesej, ...extra }, null, 2));
+  else console.error((code === 2 ? '❓ PERLU INPUT GURU: ' : '❌ ') + mesej);
+  process.exit(code);
+};
+
+if (!args.minggu) berhenti(2, 'Nyatakan minggu. Contoh: node jana-rph.mjs --minggu 39');
+const tahun = args.tahun || new Date().getFullYear();
+
+// ---------- config & login ----------
+const cfgPath = join(HERE, 'rph-agent.config.json');
+if (!existsSync(cfgPath)) berhenti(1, `Fail ${cfgPath} tiada. Salin rph-agent.config.example.json → rph-agent.config.json dan isi.`);
+const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+
+let createClient;
+try { ({ createClient } = await import('@supabase/supabase-js')); }
+catch { berhenti(1, 'Pakej belum dipasang. Jalankan: npm install'); }
+
+const db = createClient(cfg.supabaseUrl, cfg.anonKey);
+{
+  const { error } = await db.auth.signInWithPassword({ email: cfg.email, password: cfg.password });
+  if (error) berhenti(1, 'Login Supabase gagal: ' + error.message);
+}
+const must = (res, what) => { if (res.error) berhenti(1, `${what}: ${res.error.message}`); return res.data; };
+
+// ---------- 1. takwim ----------
+let takwim = must(await db.from('takwim').select('*').eq('tahun', tahun).eq('minggu', args.minggu).maybeSingle(), 'Baca takwim');
+if (!takwim) {
+  if (!args.tarikhAhad) berhenti(2, `Takwim ${tahun} minggu ${args.minggu} belum ada. Tanya guru tarikh Ahad minggu tu, kemudian ulang dengan --tarikh-ahad YYYY-MM-DD`, { perlu: 'tarikh_ahad' });
+  if (new Date(args.tarikhAhad + 'T00:00:00').getDay() !== 0) berhenti(2, `${args.tarikhAhad} bukan hari Ahad.`);
+  const baru = { tahun, minggu: args.minggu, tarikh_ahad: args.tarikhAhad, minggu_rpt: args.minggu, status: 'SEKOLAH' };
+  if (args.semak) { takwim = baru; out(`(semak) Takwim minggu ${args.minggu} akan dicipta: Ahad ${args.tarikhAhad}`); }
+  else {
+    takwim = must(await db.from('takwim').insert(baru).select().single(), 'Cipta takwim');
+    out(`➕ Takwim minggu ${args.minggu} dicipta (Ahad ${args.tarikhAhad}).`);
+  }
+}
+if ((takwim.status || 'SEKOLAH') !== 'SEKOLAH') berhenti(2, `Minggu ${args.minggu} bertanda ${takwim.status} dalam takwim — tiada PdP. Sahkan dengan guru.`);
+const weekStart = takwim.tarikh_ahad;
+const weekEnd = C.addDaysISO(weekStart, 4);
+const mingguRpt = takwim.minggu_rpt ?? takwim.minggu;
+
+// ---------- 2. cuti dari argumen → simpan ke DB (website pun nampak) ----------
+for (const [t, sebab] of Object.entries(args.cuti)) {
+  if (t < weekStart || t > weekEnd) berhenti(2, `Tarikh cuti ${t} di luar minggu ${args.minggu} (${weekStart} – ${weekEnd}).`);
+  if (!args.semak) must(await db.from('cuti').upsert({ tarikh: t, sebab }), 'Simpan cuti');
+}
+
+// ---------- 3. data asas ----------
+const jadual = must(await db.from('jadual_waktu').select('*').eq('active', true).eq('tahun', tahun), 'Baca jadual');
+if (!jadual.length) berhenti(2, `Tiada jadual waktu aktif untuk ${tahun}. Guru perlu isi tab Jadual Waktu dulu.`);
+const dskp = must(await db.from('dskp_database').select('*').eq('active', true), 'Baca DSKP');
+const rpt = must(await db.from('rpt').select('*'), 'Baca RPT');
+const cutiRows = must(await db.from('cuti').select('*').gte('tarikh', weekStart).lte('tarikh', weekEnd), 'Baca cuti');
+const cuti = Object.fromEntries(cutiRows.map(r => [r.tarikh, r.sebab]));
+Object.assign(cuti, args.cuti);
+const existingRows = must(await db.from('rph_entri').select('*').gte('tarikh', weekStart).lte('tarikh', weekEnd), 'Baca rph_entri');
+const existing = Object.fromEntries(existingRows.map(r => [`${r.tarikh}|${r.jadual_id}`, r]));
+const histRows = must(await db.from('rph_entri').select('*').lt('tarikh', weekStart)
+  .gte('tarikh', C.addDaysISO(weekStart, -150)).order('tarikh'), 'Baca sejarah');
+const jById = Object.fromEntries(jadual.map(j => [j.id, j]));
+// Sejarah perlukan kelas/subjek; jadual lama mungkin tak aktif lagi → tarik semua
+const allJ = must(await db.from('jadual_waktu').select('id,kelas,subjek_text'), 'Baca jadual penuh');
+const jAll = Object.fromEntries(allJ.map(j => [j.id, j]));
+const history = histRows.filter(h => jAll[h.jadual_id]).map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }));
+
+// ---------- 4. pelan ----------
+const modOverride = {};
+for (const k of args.rpt) modOverride[k.toLowerCase() === 'semua' ? '*' : C.normalizeSubject(k)] = 'RPT';
+const slots = jadual.filter(j => C.HARI_OFFSET[j.hari] !== undefined)
+  .map(slot => ({ slot, hari: slot.hari, tarikhISO: C.addDaysISO(weekStart, C.HARI_OFFSET[slot.hari]), weekStartISO: weekStart }));
+const plan = C.planWeek({ slots, history, existing, rpt, cuti, mingguRpt, modOverride, paksa: !!args.paksa });
+
+// Kehadiran: Fasa 4 akan tarik dari sistem kehadiran. Buat masa ni: kekal nilai sedia ada / penuh.
+const hadirFor = (p) => existing[`${p.tarikhISO}|${p.slot.id}`]?.hadir ?? p.slot.bil_murid ?? null;
+
+const ringkas = plan.map(p => ({
+  tarikh: p.tarikhISO, hari: p.hari, masa: p.slot.masa_text, kelas: p.slot.kelas, subjek: p.slot.subjek_text,
+  mod: p.mod, tindakan: p.tindakan, status: p.status, sp: p.codes, hadir: hadirFor(p), nota: p.notes
+}));
+if (!args.json) {
+  out(`\n📅 Minggu ${args.minggu} (${weekStart} – ${weekEnd}) · minggu RPT ${mingguRpt}${args.semak ? ' · MOD SEMAK (tiada perubahan)' : ''}\n`);
+  for (const r of ringkas)
+    out(`${r.hari.padEnd(7)} ${r.masa.padEnd(14)} ${r.kelas.padEnd(11)} ${r.subjek.padEnd(15)} ${r.tindakan === 'KEKAL' ? '🔒' : r.status === 'TANGGUH' ? '⏸' : '📝'} ${(r.sp.join(', ') || '— tiada —').padEnd(22)} ${r.nota.join(' | ')}`);
+}
+const kosong = plan.filter(p => !p.codes.length);
+if (args.semak) {
+  if (args.json) console.log(JSON.stringify({ ok: true, minggu: args.minggu, weekStart, mingguRpt, pelan: ringkas }, null, 2));
+  process.exit(0);
+}
+
+// ---------- 5. simpan draf ----------
+const tulis = plan.filter(p => p.tindakan === 'TULIS' && p.codes.length);
+for (const p of tulis) {
+  must(await db.from('rph_entri').upsert({
+    tarikh: p.tarikhISO, jadual_id: p.slot.id, kod_sp: p.codes, hadir: hadirFor(p), total: p.slot.bil_murid ?? null,
+    refleksi_pilihan: p.refleksi_pilihan, refleksi_manual: p.refleksi_manual, status: p.status,
+    sumber: 'AGENT', updated_at: new Date().toISOString()
+  }, { onConflict: 'tarikh,jadual_id' }), `Simpan ${p.slot.kelas} ${p.tarikhISO}`);
+}
+out(`\n💾 ${tulis.length} slot disimpan sebagai draf.${kosong.length ? ` ⚠ ${kosong.length} slot tiada SP (lihat nota).` : ''}`);
+if (args.tanpaPdf) { if (args.json) console.log(JSON.stringify({ ok: true, disimpan: tulis.length, pelan: ringkas })); process.exit(0); }
+
+// ---------- 6. jana PDF ----------
+const fresh = must(await db.from('rph_entri').select('*').gte('tarikh', weekStart).lte('tarikh', weekEnd), 'Baca semula rph_entri');
+const dskpMap = C.buildDskpMap(dskp);
+const rphs = [], ralat = [];
+for (const p of plan) {
+  const e = fresh.find(r => r.tarikh === p.tarikhISO && r.jadual_id === p.slot.id);
+  if (!e || !(e.kod_sp || []).length) continue;
+  const res = C.buildRph({ slot: p.slot, tarikhISO: p.tarikhISO, hari: p.hari, codes: e.kod_sp,
+    hadir: e.hadir, refleksi_pilihan: e.refleksi_pilihan, refleksi_manual: e.refleksi_manual }, dskpMap);
+  if (res.error) ralat.push(res.error); else rphs.push({ ...res.rph, _status: e.status });
+}
+if (ralat.length) out('\n⚠ Slot dilangkau:\n  ' + ralat.join('\n  '));
+if (!rphs.length) berhenti(1, 'Tiada RPH yang boleh dijana.');
+
+const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}${C.RPH_PRINT_CSS}</style></head>
+<body>${rphs.map(C.buildRphPage).join('')}</body></html>`;
+const keluarDir = (cfg.keluarDir || '~/Desktop').replace(/^~/, homedir());
+mkdirSync(keluarDir, { recursive: true });
+const pdfPath = join(keluarDir, `RPH Minggu ${args.minggu}.pdf`);
+
+let pw;
+try { pw = await import('playwright'); } catch { berhenti(1, 'Playwright belum dipasang. Jalankan: npm install'); }
+let browser;
+try { browser = await pw.chromium.launch({ channel: 'chrome' }); }          // guna Google Chrome sedia ada
+catch { try { browser = await pw.chromium.launch(); }                         // atau Chromium Playwright
+        catch { berhenti(1, 'Tiada browser. Jalankan: npx playwright install chromium'); } }
+const page = await browser.newPage();
+await page.setContent(html, { waitUntil: 'load' });
+await page.pdf({ path: pdfPath, preferCSSPageSize: true, printBackground: true });
+await browser.close();
+
+// ---------- 7. tanda SIAP + log ----------
+for (const r of rphs.filter(r => r._status !== 'TANGGUH'))
+  await db.from('rph_entri').update({ status: 'SIAP' }).eq('tarikh', r.tarikhISO).eq('jadual_id', r.id);
+await db.from('rph_log').insert(rphs.map(r => ({
+  tarikh_pdp: r.tarikhISO, hari: r.hari, kelas: r.kelas, masa: r.masa_text, subject_id: r.subject_id || null,
+  subjek_text: r.subjek_text, kod_sk: r.kod_sk, kod_sp: r.spCodes, hadir: r.hadir, total: r.total,
+  refleksi: r.refleksi, status: 'JANA'
+})));
+
+if (args.json) console.log(JSON.stringify({ ok: true, pdf: pdfPath, bilangan_rph: rphs.length, dilangkau: ralat, pelan: ringkas }, null, 2));
+else out(`\n✅ ${rphs.length} RPH → ${pdfPath}`);
+process.exit(0);
