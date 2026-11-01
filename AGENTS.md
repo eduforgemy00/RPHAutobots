@@ -11,6 +11,8 @@ Guru bercakap Bahasa Melayu santai. Balas dalam BM santai, ringkas, point form.
 | "minggu 39, Selasa cuti sukan" | `--cuti 2026-MM-DD="Sukan Tahunan"` |
 | "4 Kreatif ikut RPT" / "ada pemantauan" | `--rpt "4 KREATIF"` atau `--rpt semua` |
 | "simpan je, jangan PDF" | `--tanpa-pdf` |
+| "5D sains guna 9.1.1 dan 9.1.2" | `--sp "5 DEDIKASI/SAINS=9.1.1,9.1.2"` |
+| "5K ulang 10.1.4" / "4K sambung dari 6.1.1" | `--sp "5 KREATIF/SAINS=10.1.4"` · `--sp "4 KREATIF/SAINS=6.1.1,6.1.2"` |
 | "minggu 1 tahun depan" | `--tahun 2027 --minggu 1` (takwim baru — lihat kod keluar 2) |
 
 ## ALIRAN STANDARD (wajib ikut urutan)
@@ -24,7 +26,11 @@ Guru bercakap Bahasa Melayu santai. Balas dalam BM santai, ringkas, point form.
    node jana-rph.mjs --minggu N [flag] --semak
    ```
 3. **Tunjuk ringkasan** kepada guru: hari, kelas, SP cadangan, dan semua baris ⚠ amaran.
-   Tanya: "Ok jana?" — tunggu guru setuju.
+   - Jika ada slot **"— tiada —"** (nota *Dah sampai hujung RPT* / *Tiada SP*), TANYA guru:
+     "5 Dedikasi Sains dah habis RPT. Nak guna SP apa minggu ni?"
+     Kemudian semak semula dengan `--sp "KELAS/SUBJEK=kod,kod"` (satu `--sp` untuk setiap kelas).
+     `--sp` hanya tetapkan sesi PERTAMA kelas tu; sesi seterusnya minggu sama akan sambung sendiri.
+   - Tanya: "Ok jana?" — tunggu guru setuju.
 4. **Jana**:
    ```
    node jana-rph.mjs --minggu N [flag yang sama]
@@ -62,6 +68,7 @@ Guna `--json` jika kamu mahu output berstruktur.
 - Sesi **TANGGUH** (cuti/program) → SP sama dibawa ke sesi berikutnya.
 - Slot yang guru isi manual atau dah dicetak (✅) **tidak diubah** (🔒).
 - ⚠ *Ketinggalan X minggu* = kelas jauh di belakang RPT. Maklumkan sahaja, jangan ubah apa-apa.
+  (Nota: angka untuk **Sains Tahun 4** tak tepat — fail RPT Sains 4 edisi berbeza. Abaikan angka tu.)
 
 ## Persediaan kali pertama (sekali sahaja)
 

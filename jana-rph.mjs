@@ -10,6 +10,7 @@
  *   --rpt "4 KREATIF,5 DEDIKASI" kelas yang ikut RPT minggu ni (pemantauan). --rpt semua = semua kelas
  *   --cuti 2026-11-03="Sukan Tahunan"   tarikh tak mengajar (boleh ulang). Slot jadi TANGGUH
  *   --tarikh-ahad 2026-11-01     cipta baris takwim jika minggu belum ada
+ *   --sp "5 DEDIKASI/SAINS=9.1.1,9.1.2"   SP pilihan guru (sesi pertama minggu ni; sesi seterusnya sambung)
  *   --paksa                      tindih juga slot MANUAL/SIAP (berhati-hati)
  *   --tanpa-pdf                  simpan draf sahaja
  *   --json                       output pelan dalam JSON (untuk agent)
@@ -36,6 +37,12 @@ function parseArgs(argv) {
     else if (k === '--rpt') { a.rpt = v.split(',').map(s => s.trim()).filter(Boolean); i++; }
     else if (k === '--cuti') { const [t, ...s] = v.split('='); a.cuti[t.trim()] = s.join('=').replace(/^"|"$/g, '').trim() || 'Cuti'; i++; }
     else if (k === '--tarikh-ahad') { a.tarikhAhad = v; i++; }
+    else if (k === '--sp') {   // "5 DEDIKASI/SAINS=10.1.1,10.1.2"  (subjek boleh tinggal jika kelas ada 1 subjek)
+      const [lhs, rhs = ''] = v.split('=');
+      const [kelas, subjek = '*'] = lhs.split('/').map(s => s.trim());
+      (a.sp ||= []).push({ kelas, subjek, codes: rhs.split(',').map(s => s.trim()).filter(Boolean) });
+      i++;
+    }
     else if (k === '--paksa') a.paksa = true;
     else if (k === '--semak') a.semak = true;
     else if (k === '--tanpa-pdf') a.tanpaPdf = true;
@@ -122,9 +129,23 @@ const history = [
 // ---------- 4. pelan ----------
 const modOverride = {};
 for (const k of args.rpt) modOverride[k.toLowerCase() === 'semua' ? '*' : C.normalizeSubject(k)] = 'RPT';
+// --sp: SP pilihan guru. Semak kelas wujud, subjek jelas, dan kod ada dalam DSKP.
+const spOverride = {};
+for (const o of args.sp || []) {
+  const subjKelas = [...new Set(jadual.filter(j => C.normalizeSubject(j.kelas) === C.normalizeSubject(o.kelas)).map(j => j.subjek_text))];
+  if (!subjKelas.length) berhenti(2, `Kelas "${o.kelas}" tiada dalam jadual.`);
+  let subj = o.subjek === '*' ? null : subjKelas.find(s => C.normalizeSubject(s) === C.normalizeSubject(o.subjek));
+  if (o.subjek === '*' && subjKelas.length === 1) subj = subjKelas[0];
+  if (!subj) berhenti(2, `Kelas ${o.kelas} ada subjek ${subjKelas.join(' / ')}. Guna --sp "${o.kelas}/SUBJEK=kod,kod".`);
+  if (!o.codes.length) berhenti(2, `Tiada kod SP untuk ${o.kelas}/${subj}.`);
+  const tahunD = C.getTahunFromKelas(o.kelas);
+  const tiada = o.codes.filter(c => !dskp.some(d => C.normalizeSubject(d.subjek_text) === C.normalizeSubject(subj) && d.tahun === tahunD && C.cleanText(d.kod_sp) === c));
+  if (tiada.length) berhenti(2, `Kod ${tiada.join(', ')} tiada dalam DSKP ${subj} Tahun ${tahunD}. Sahkan kod dengan guru.`);
+  spOverride[`${C.normalizeSubject(o.kelas)}|${C.normalizeSubject(subj)}`] = o.codes;
+}
 const slots = jadual.filter(j => C.HARI_OFFSET[j.hari] !== undefined)
   .map(slot => ({ slot, hari: slot.hari, tarikhISO: C.addDaysISO(weekStart, C.HARI_OFFSET[slot.hari]), weekStartISO: weekStart }));
-const plan = C.planWeek({ slots, history, existing, rpt, cuti, mingguRpt, modOverride, paksa: !!args.paksa });
+const plan = C.planWeek({ slots, history, existing, rpt, cuti, mingguRpt, modOverride, spOverride, paksa: !!args.paksa });
 
 // Kehadiran: Fasa 4 akan tarik dari sistem kehadiran. Buat masa ni: kekal nilai sedia ada / penuh.
 const hadirFor = (p) => existing[`${p.tarikhISO}|${p.slot.id}`]?.hadir ?? p.slot.bil_murid ?? null;

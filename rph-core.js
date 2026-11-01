@@ -322,7 +322,14 @@ Penutup:
 
       const last = hist[key];
       let res;
-      if (mod === 'RPT' || !last) {
+      // SP ditetapkan guru (--sp) → guna untuk sesi PERTAMA kelas tu minggu ni; sesi berikutnya sambung dari situ
+      const ov = (ctx.spOverride || {})[key] || (ctx.spOverride || {})[`${normalizeSubject(slot.kelas)}|*`];
+      const ovUsed = ctx._ovUsed || (ctx._ovUsed = new Set());
+      if (ov && !ovUsed.has(key)) {
+        ovUsed.add(key);
+        res = { codes: ov, blockIndex: -1 };
+        p.notes.push('SP ditetapkan guru');
+      } else if (mod === 'RPT' || !last) {
         const bi = blockForWeek(blocks, ctx.mingguRpt);
         const sameWeekEarlier = last && last.tarikh >= s.weekStartISO && last._fromRun;
         if (bi < 0) res = { codes: [], blockIndex: -1, note: 'Tiada blok RPT untuk minggu ini' };
@@ -340,6 +347,7 @@ Penutup:
 
       // Amaran ketinggalan berbanding RPT
       const target = blockForWeek(blocks, ctx.mingguRpt);
+      if (!p.codes.length && !res.note) p.notes.push('Tiada SP — tanya guru');
       if (res.blockIndex >= 0 && target >= 0) {
         const lag = blocks[target].minggu_mula - blocks[res.blockIndex].minggu_akhir;
         if (lag >= 2) p.notes.push(`⚠ Ketinggalan ~${lag} minggu dari RPT`);
