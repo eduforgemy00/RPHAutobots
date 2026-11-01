@@ -1115,16 +1115,23 @@
       const tk = state.takwim.find(t => t.tarikh_ahad === weekStart);
       if (!tk) { alert('Minggu ni belum ada dalam Takwim. Tambah di tab Takwim dulu.'); return; }
       const datesISO = [...new Set(state.visibleSlots.map(s => localISODate(s.tarikh)))];
-      const [histRes, cutiRes, jRes] = await Promise.all([
-        db.from('rph_entri').select('*').lt('tarikh', weekStart).gte('tarikh', RPHCore.addDaysISO(weekStart, -150)),
+      const dari = RPHCore.addDaysISO(weekStart, -150);
+      const [histRes, cutiRes, jRes, logRes] = await Promise.all([
+        db.from('rph_entri').select('*').lt('tarikh', weekStart).gte('tarikh', dari),
         db.from('cuti').select('*').in('tarikh', datesISO),
-        db.from('jadual_waktu').select('id,kelas,subjek_text')
+        db.from('jadual_waktu').select('id,kelas,subjek_text'),
+        db.from('rph_log').select('kelas,subjek_text,tarikh_pdp,kod_sp,refleksi').lt('tarikh_pdp', weekStart).gte('tarikh_pdp', dari)
       ]);
-      const err = [histRes, cutiRes, jRes].find(r => r.error);
+      const err = [histRes, cutiRes, jRes, logRes].find(r => r.error);
       if (err) { alert('Gagal baca data: ' + err.error.message); return; }
       const jAll = Object.fromEntries(jRes.data.map(j => [j.id, j]));
-      const history = histRes.data.filter(h => jAll[h.jadual_id])
-        .map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }));
+      // Sejarah = rph_log (semua PDF lama) dulu, kemudian rph_entri (menang jika tarikh sama)
+      const history = [
+        ...logRes.data.map(l => ({ kelas: l.kelas, subjek_text: l.subjek_text, tarikh: l.tarikh_pdp, kod_sp: l.kod_sp,
+                                   status: RPHCore.isTangguhRefleksi(l.refleksi) ? 'TANGGUH' : 'SIAP' })),
+        ...histRes.data.filter(h => jAll[h.jadual_id])
+          .map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }))
+      ];
 
       const plan = RPHCore.planWeek({
         slots: state.visibleSlots.map(v => ({ slot: v.slot, hari: v.hari, tarikhISO: localISODate(v.tarikh), weekStartISO: weekStart })),

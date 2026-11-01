@@ -109,7 +109,15 @@ const jById = Object.fromEntries(jadual.map(j => [j.id, j]));
 // Sejarah perlukan kelas/subjek; jadual lama mungkin tak aktif lagi → tarik semua
 const allJ = must(await db.from('jadual_waktu').select('id,kelas,subjek_text'), 'Baca jadual penuh');
 const jAll = Object.fromEntries(allJ.map(j => [j.id, j]));
-const history = histRows.filter(h => jAll[h.jadual_id]).map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }));
+// Sejarah = rph_log (rekod setiap PDF yang pernah dijana, termasuk era v2) + rph_entri.
+// rph_log diletak DULU; sort dalam planWeek stabil, jadi rph_entri menang jika tarikh sama.
+const logRows = must(await db.from('rph_log').select('kelas,subjek_text,tarikh_pdp,kod_sp,refleksi')
+  .lt('tarikh_pdp', weekStart).gte('tarikh_pdp', C.addDaysISO(weekStart, -150)), 'Baca rph_log');
+const history = [
+  ...logRows.map(l => ({ kelas: l.kelas, subjek_text: l.subjek_text, tarikh: l.tarikh_pdp, kod_sp: l.kod_sp,
+                         status: C.isTangguhRefleksi(l.refleksi) ? 'TANGGUH' : 'SIAP' })),
+  ...histRows.filter(h => jAll[h.jadual_id]).map(h => ({ ...h, kelas: jAll[h.jadual_id].kelas, subjek_text: jAll[h.jadual_id].subjek_text }))
+];
 
 // ---------- 4. pelan ----------
 const modOverride = {};
